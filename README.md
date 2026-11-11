@@ -1,0 +1,2 @@
+# AI-Powered_Waste_Sorting_and_Recycling_Assistant_Team_26
+Python Compact Course Capstone Project
