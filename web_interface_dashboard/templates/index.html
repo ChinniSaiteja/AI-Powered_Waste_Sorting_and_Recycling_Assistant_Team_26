@@ -1,0 +1,148 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Waste Sorting Assistant</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+    <!-- Header -->
+    <header>
+        <h1>Waste Sorting Assistant</h1>
+        <p>Identify waste and find the correct disposal method</p>
+    </header>
+
+    <main class="container">
+
+        <!-- Image Upload Section -->
+        <section class="upload-card">
+
+            <h2>Upload or Capture Waste Image</h2>
+
+            <p>
+                Choose an existing image from your device
+                or take a new photo.
+            </p>
+
+            <form id="uploadForm">
+
+                <!-- Image Selection Options -->
+                <div class="upload-options">
+
+                    <!-- Option 1: Gallery -->
+                    <label for="imageInput" class="option-button">
+                        📁 Upload from Gallery
+                    </label>
+
+                    <input
+                        type="file"
+                        id="imageInput"
+                        name="image"
+                        accept="image/*"
+                        hidden
+                    >
+
+                    <!-- Option 2: Camera -->
+                    <label for="cameraInput" class="option-button">
+                        📷 Take a Photo
+                    </label>
+
+                    <input
+                        type="file"
+                        id="cameraInput"
+                        name="image"
+                        accept="image/*"
+                        capture="environment"
+                        hidden
+                    >
+
+                </div>
+
+                <!-- Image Preview -->
+                <div id="previewContainer"
+                     class="preview-container hidden">
+
+                    <img
+                        id="imagePreview"
+                        src=""
+                        alt="Selected waste image"
+                    >
+
+                    <p id="fileName"></p>
+
+                </div>
+
+                <!-- Analyse Button -->
+                <button
+                    type="submit"
+                    id="analyseButton"
+                    disabled
+                >
+                    Analyse Image
+                </button>
+
+            </form>
+
+            <!-- Status and Error Messages -->
+            <p id="statusMessage" class="status-message"></p>
+
+        </section>
+
+
+        <!-- Classification Result Section -->
+        <section id="resultSection" class="result-card hidden">
+
+            <h2>Classification Result</h2>
+
+            <div class="result-item">
+                <span>Waste Name</span>
+                <strong id="wasteName"></strong>
+            </div>
+
+            <div class="result-item">
+                <span>Category</span>
+                <strong id="category"></strong>
+            </div>
+
+            <div class="result-item">
+                <span>Confidence</span>
+                <strong id="confidence"></strong>
+            </div>
+
+            <div class="result-item">
+                <span>Disposal Instructions</span>
+                <p id="disposalInstruction"></p>
+            </div>
+
+            <div class="result-item">
+                <span>Educational Explanation</span>
+                <p id="explanation"></p>
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- Footer -->
+    <footer>
+        <p>Waste Sorting Assistant | Waste Management Project</p>
+    </footer>
+
+
+    <!-- JavaScript -->
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+
+</body>
+</html>
+
+
+
