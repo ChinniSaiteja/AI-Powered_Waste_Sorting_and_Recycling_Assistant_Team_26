@@ -1,13 +1,16 @@
-   # Virtual environment
-   venv/
+# Virtual environment
+venv/
 
-   # Python cache
-   __pycache__/
-   *.pyc
+# Python cache
+__pycache__/
+*.pyc
 
-   # Secrets
-   .env
+# Secrets
+.env
 
-   # Editor / system files
-   .vscode/
-   .DS_Store
+# Editor / system files
+.vscode/
+.idea/
+.DS_Store
+# Local SQLite database (created automatically)
+database/waste.db
