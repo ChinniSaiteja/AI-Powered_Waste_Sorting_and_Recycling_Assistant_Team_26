@@ -17,6 +17,7 @@ from backend.classification_result_handler import (
 from backend.response_composer import ResponseComposer
 from backend.exceptions import (
     ClassifierIntegrationError,
+    InvalidImageError,
     InvalidClassificationResultError,
     GuidanceIntegrationError,
 )
@@ -54,6 +55,19 @@ class FakeClassifier:
             "confidence": self.confidence,
         }
 
+class InvalidImageClassifier:
+    """
+    Fake classifier that reports an invalid uploaded image.
+    """
+
+    def classify(self, image_bytes):
+        return {
+            "status": "invalid_image",
+            "message": (
+                "The uploaded image is not suitable "
+                "for waste classification."
+            ),
+        }
 
 class BrokenClassifier:
     """Classifier that simulates an integration failure."""
@@ -208,6 +222,54 @@ def test_classification_result_handler_invalid_result():
     ):
         handler.handle("invalid result")
 
+def test_classification_result_handler_invalid_image():
+    """
+    An invalid_image classifier result should raise
+    InvalidImageError before label/confidence validation.
+    """
+
+    handler = ClassificationResultHandler()
+
+    with pytest.raises(
+        InvalidImageError,
+        match="could not be used",
+    ):
+        handler.handle(
+            {
+                "status": "invalid_image",
+                "message": (
+                    "The uploaded image could not be used "
+                    "for waste classification."
+                ),
+            }
+        )
+
+def test_backend_invalid_image_does_not_call_guidance_or_database():
+    """
+    An invalid image should stop the workflow immediately.
+
+    Guidance and database saving must not happen.
+    """
+
+    database_manager = FakeDatabaseManager()
+    guidance_service = FakeGuidanceService()
+
+    service = AnalysisService(
+        classifier=InvalidImageClassifier(),
+        database_manager=database_manager,
+        guidance_service=guidance_service,
+    )
+
+    with pytest.raises(InvalidImageError):
+        service.analyze(
+            image_bytes=b"fake-image-data",
+            region="Dortmund",
+        )
+
+    # No classification should have been saved.
+    assert len(
+        database_manager.saved_classifications
+    ) == 0
 
 def test_classification_result_handler_missing_label():
     """A classifier result without a label should be rejected."""
@@ -254,6 +316,22 @@ def test_classification_result_handler_missing_confidence():
             {
                 "status": "completed",
                 "label": "plastic bottle",
+            }
+        )
+
+def test_invalid_image_does_not_require_label_or_confidence():
+    """
+    An invalid image result should be rejected as an invalid image,
+    not as a missing-label or missing-confidence result.
+    """
+
+    handler = ClassificationResultHandler()
+
+    with pytest.raises(InvalidImageError):
+        handler.handle(
+            {
+                "status": "invalid_image",
+                "message": "No recognizable waste was detected.",
             }
         )
 

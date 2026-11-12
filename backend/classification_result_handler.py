@@ -2,7 +2,10 @@
 Handles and validates the result returned by the ML classifier.
 """
 
-from .exceptions import InvalidClassificationResultError
+from .exceptions import (
+    InvalidClassificationResultError,
+    InvalidImageError,
+)
 
 
 class ClassificationResultHandler:
@@ -60,6 +63,19 @@ class ClassificationResultHandler:
             )
 
         status = prediction.get("status", "completed")
+
+        # Handles invalid image case
+        if status == "invalid_image":
+
+            message = prediction.get("message")
+
+            if not isinstance(message, str) or not message.strip():
+                message = (
+                    "The uploaded image could not be used "
+                    "for waste classification."
+                )
+
+            raise InvalidImageError(message)
 
         if status not in ("completed", "uncertain"):
             raise InvalidClassificationResultError(

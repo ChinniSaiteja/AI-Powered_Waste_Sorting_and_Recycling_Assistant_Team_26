@@ -15,6 +15,14 @@ class ClassifierIntegrationError(BackendError):
     pass
 
 
+class InvalidImageError(BackendError):
+    """
+    Raised when the classifier determines that the uploaded
+    image cannot be used for classification.
+    """
+
+    pass
+
 class InvalidClassificationResultError(BackendError):
     """Raised when the classifier returns an invalid result."""
 

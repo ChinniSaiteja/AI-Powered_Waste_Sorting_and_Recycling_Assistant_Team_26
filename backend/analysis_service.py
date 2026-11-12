@@ -21,6 +21,7 @@ The AnalysisService coordinates:
 from .classification_result_handler import (
     ClassificationResultHandler,
 )
+
 from .response_composer import ResponseComposer
 
 from .exceptions import (
@@ -68,6 +69,7 @@ class AnalysisService:
     @classifier.setter
     def classifier(self, value):
         """Set the classifier."""
+
         if value is None:
             raise ValueError("Classifier cannot be None.")
 
@@ -81,6 +83,7 @@ class AnalysisService:
     @database_manager.setter
     def database_manager(self, value):
         """Set the database manager."""
+
         if value is None:
             raise ValueError(
                 "Database manager cannot be None."
@@ -96,6 +99,7 @@ class AnalysisService:
     @guidance_service.setter
     def guidance_service(self, value):
         """Set the guidance service."""
+
         if value is None:
             raise ValueError(
                 "Guidance service cannot be None."
@@ -139,7 +143,26 @@ class AnalysisService:
         -------
         dict
             Final response expected by the frontend.
+
+        Raises
+        ------
+        ValueError
+            If the image data is empty.
+
+        ClassifierIntegrationError
+            If the classifier itself fails.
+
+        InvalidImageError
+            If the classifier determines that the image
+            cannot be used for classification.
+
+        GuidanceIntegrationError
+            If guidance retrieval fails.
         """
+
+        # -----------------------------------------------------
+        # Step 0: Validate image data
+        # -----------------------------------------------------
 
         if not image_bytes:
             raise ValueError(
@@ -162,6 +185,20 @@ class AnalysisService:
 
         # -----------------------------------------------------
         # Step 2: Validate and normalize classifier result
+        #
+        # Important:
+        # If the classifier returns:
+        #
+        # {
+        #     "status": "invalid_image",
+        #     "message": "..."
+        # }
+        #
+        # ClassificationResultHandler raises InvalidImageError.
+        #
+        # That exception is intentionally NOT caught here.
+        # It should go back to the web layer as a normal
+        # invalid-image response.
         # -----------------------------------------------------
 
         classification = self._result_handler.handle(
