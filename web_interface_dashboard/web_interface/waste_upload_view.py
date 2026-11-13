@@ -13,6 +13,8 @@ Usage (in the Flask app):
         ...
 """
 
+from web_interface.exceptions import InvalidUploadError
+
 
 class WasteUploadView:
     """Handles selecting and submitting a waste image."""
@@ -66,14 +68,14 @@ class WasteUploadView:
     def selected_image(self, image) -> None:
         """Store the image and read its name, size and type (validated)."""
         if image is None or not getattr(image, "filename", None):
-            raise ValueError("No image selected.")
+            raise InvalidUploadError("No image selected.")
 
         size = len(image.read())
         image.seek(0)  # rewind, so the image can be read again later
         if size == 0:
-            raise ValueError("The selected image is empty.")
+            raise InvalidUploadError("The selected image is empty.")
         if size > self._max_size_bytes:
-            raise ValueError("The selected image is too large.")
+            raise InvalidUploadError("The selected image is too large.")
 
         self._selected_image = image
         self._image_name = image.filename
@@ -88,7 +90,7 @@ class WasteUploadView:
     @upload_status.setter
     def upload_status(self, status: str) -> None:
         if status not in self.VALID_STATUSES:
-            raise ValueError(f"Invalid upload status: {status}")
+            raise InvalidUploadError(f"Invalid upload status: {status}")
         self._upload_status = status
 
     @property
@@ -98,7 +100,7 @@ class WasteUploadView:
     @max_size_bytes.setter
     def max_size_bytes(self, size: int) -> None:
         if not isinstance(size, int) or size <= 0:
-            raise ValueError("Maximum size must be a positive whole number.")
+            raise InvalidUploadError("Maximum size must be a positive whole number.")
         self._max_size_bytes = size
 
     # Read-only: these are set automatically from the selected image
@@ -126,7 +128,7 @@ class WasteUploadView:
         try:
             self.selected_image = image
             self._error_message = None
-        except ValueError as error:
+        except InvalidUploadError as error:
             self._selected_image = None
             self._error_message = str(error)
             self.upload_status = "Invalid Image"

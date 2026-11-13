@@ -1,6 +1,6 @@
 """
 Subsystem - Web Interface & Municipality Dashboard
-
+Owner: Kanika Sehgal
 
 ClassificationResultView: stores the classification result for one image
 (waste name, category, confidence, disposal instruction, AI explanation)
@@ -13,6 +13,8 @@ Usage (in the Flask app):
 """
 
 from enum import Enum
+
+from web_interface.exceptions import InvalidResultError
 
 
 class WasteCategory(Enum):
@@ -64,7 +66,7 @@ class ClassificationResultView:
     @waste_name.setter
     def waste_name(self, name: str) -> None:
         if not isinstance(name, str) or not name.strip():
-            raise ValueError("Waste name must be a non-empty string.")
+            raise InvalidResultError("Waste name must be a non-empty string.")
         self._waste_name = name.strip()
 
     @property
@@ -80,7 +82,7 @@ class ClassificationResultView:
         try:
             self._category = WasteCategory[str(category).strip().upper()]
         except KeyError:
-            raise ValueError(f"Unknown waste category: {category}") from None
+            raise InvalidResultError(f"Unknown waste category: {category}") from None
 
     @property
     def confidence(self) -> float:
@@ -91,9 +93,9 @@ class ClassificationResultView:
         try:
             value = float(value)
         except (TypeError, ValueError):
-            raise ValueError("Confidence must be a number.") from None
+            raise InvalidResultError("Confidence must be a number.") from None
         if not 0.0 <= value <= 1.0:
-            raise ValueError("Confidence must be between 0 and 1.")
+            raise InvalidResultError("Confidence must be between 0 and 1.")
         self._confidence = value
 
     @property
@@ -103,7 +105,7 @@ class ClassificationResultView:
     @disposal_instruction.setter
     def disposal_instruction(self, text: str) -> None:
         if not isinstance(text, str) or not text.strip():
-            raise ValueError("Disposal instruction must be a non-empty string.")
+            raise InvalidResultError("Disposal instruction must be a non-empty string.")
         self._disposal_instruction = text.strip()
 
     @property
@@ -113,7 +115,7 @@ class ClassificationResultView:
     @explanation.setter
     def explanation(self, text) -> None:
         if text is not None and not isinstance(text, str):
-            raise ValueError("Explanation must be text or None.")
+            raise InvalidResultError("Explanation must be text or None.")
         self._explanation = text
 
     @property
@@ -123,7 +125,7 @@ class ClassificationResultView:
     @error_message.setter
     def error_message(self, message: str | None) -> None:
         if message is not None and (not isinstance(message, str) or not message.strip()):
-            raise ValueError("Error message must be a non-empty string or None.")
+            raise InvalidResultError("Error message must be a non-empty string or None.")
         self._error_message = message
 
     # ------------------------------------------------------------------

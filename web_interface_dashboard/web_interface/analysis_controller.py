@@ -1,5 +1,6 @@
 """
-Subsystem: Web Interface - Analysis Controller
+Subsystem - Web Interface & Municipality Dashboard
+
 
 AnalysisController: checks whether an uploaded image is valid (an image and a
 file name are present, and the file type is PNG, JPG or JPEG) before it is sent
@@ -11,6 +12,8 @@ Usage (in the Flask app):
     if response["status"] == "error":
         ...
 """
+
+from web_interface.exceptions import InvalidUploadError
 
 
 class AnalysisController:
@@ -59,7 +62,7 @@ class AnalysisController:
     @request_status.setter
     def request_status(self, status: str) -> None:
         if status not in self.VALID_STATUSES:
-            raise ValueError(f"Invalid request status: {status}")
+            raise InvalidUploadError(f"Invalid request status: {status}")
         self._request_status = status
 
     @property
@@ -69,7 +72,7 @@ class AnalysisController:
     @error_message.setter
     def error_message(self, message: str | None) -> None:
         if message is not None and (not isinstance(message, str) or not message.strip()):
-            raise ValueError("Error message must be a non-empty string or None.")
+            raise InvalidUploadError("Error message must be a non-empty string or None.")
         self._error_message = message
 
     @property
@@ -81,7 +84,7 @@ class AnalysisController:
         if not extensions or not all(
             isinstance(ext, str) and ext.startswith(".") for ext in extensions
         ):
-            raise ValueError("Extensions must be a non-empty list like ('.png', '.jpg').")
+            raise InvalidUploadError("Extensions must be a non-empty list like ('.png', '.jpg').")
         self._allowed_extensions = tuple(ext.lower() for ext in extensions)
 
     # ------------------------------------------------------------------

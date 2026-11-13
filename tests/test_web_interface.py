@@ -20,6 +20,12 @@ sys.path.insert(0, str(PROJECT_ROOT / "web_interface_dashboard"))
 
 from web_interface.analysis_controller import AnalysisController  # noqa: E402
 from web_interface.classification_result_view import ClassificationResultView, WasteCategory  # noqa: E402
+from web_interface.exceptions import (  # noqa: E402
+    ImageRejectedError,
+    InvalidResultError,
+    InvalidUploadError,
+    WebInterfaceError,
+)
 from web_interface.waste_upload_view import WasteUploadView  # noqa: E402
 
 
@@ -226,3 +232,36 @@ class TestClassificationResultView:
             "message": "Please select an image.",
         }
         assert view.error_message == "Please select an image."
+
+
+# ---------------------------------------------------------------------------
+# Error handling (web_interface/exceptions.py)
+# ---------------------------------------------------------------------------
+
+class TestWebInterfaceExceptions:
+
+    @pytest.mark.parametrize("error_class", [
+        InvalidUploadError, InvalidResultError, ImageRejectedError,
+    ])
+    def test_all_errors_inherit_from_base_error(self, error_class):
+        assert issubclass(error_class, WebInterfaceError)
+
+    @pytest.mark.parametrize("error_class", [InvalidUploadError, InvalidResultError,
+                                             ImageRejectedError])
+    def test_input_errors_are_also_value_errors(self, error_class):
+        assert issubclass(error_class, ValueError)
+
+    def test_upload_setters_raise_invalid_upload_error(self):
+        with pytest.raises(InvalidUploadError):
+            AnalysisController().request_status = "nonsense"
+        with pytest.raises(InvalidUploadError):
+            WasteUploadView().selected_image = None
+
+    def test_result_setters_raise_invalid_result_error(self):
+        with pytest.raises(InvalidResultError, match="between 0 and 1"):
+            ClassificationResultView().confidence = 1.5
+
+    def test_error_keeps_its_message(self):
+        error = ImageRejectedError("The image is too dark.")
+        assert error.message == "The image is too dark."
+        assert str(error) == "The image is too dark."
