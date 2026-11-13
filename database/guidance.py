@@ -123,7 +123,8 @@ class GuidanceService:
             f"A citizen in {region}, Germany, wants to throw away: '{label}'. "
             "We have no official rule for this item. In 2 short sentences, suggest the most "
             "likely bin in Germany (yellow, blue, brown, grey bin, glass container or "
-            "Recyclinghof) and say they should check the local waste company website."
+            "Recyclinghof) and say they should check the local waste company website. "
+            "Plain English, no lists."
         )
 
     def __ask_model(self, prompt: str) -> str:
