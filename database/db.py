@@ -43,9 +43,7 @@ class DatabaseManager:
     ALLOWED_STATUS = ("completed", "uncertain", "failed")
 
     # 1. Constructor
-    def __init__(self, db_path: str | None = None, **_ignored):
-        # **_ignored: accepts (and ignores) the old engine="sqlite" keyword,
-        # so any code still written that way keeps working.
+    def __init__(self, db_path: str | None = None):
         self.db_path = db_path or os.getenv("DB_PATH", str(DEFAULT_SQLITE_PATH))
 
     # 3. Getters & setters
@@ -58,8 +56,7 @@ class DatabaseManager:
         if not value:
             raise InvalidDataError("db_path", value, "must not be empty")
         path = Path(value)
-        # a relative path (e.g. DB_PATH=database/waste.db in .env) always means the project
-        # folder, so the Flask app and the demo scripts use the same file from any folder
+        # relative path -> always from the project folder, not the current directory
         self.__db_path = str(path if path.is_absolute() else BASE_DIR / path)
 
     # ------------------------------------------------------------------
@@ -69,10 +66,7 @@ class DatabaseManager:
     def __connect(self):
         """Open a connection, give back a cursor that returns dict rows, commit at the end.
 
-        Error handling (Home Assignment 4):
-          - connection problems  -> DatabaseConnectionError
-          - broken constraints   -> InvalidDataError (e.g. unknown id)
-          - any error            -> rollback, so the database never keeps half-saved data
+        Errors turn into DatabaseConnectionError or InvalidDataError; any error rolls back.
         """
         try:
             Path(self.__db_path).parent.mkdir(parents=True, exist_ok=True)

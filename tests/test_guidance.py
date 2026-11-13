@@ -31,7 +31,7 @@ class FakeAIClient:
 
 @pytest.fixture
 def db(tmp_path):
-    manager = DatabaseManager(engine="sqlite", db_path=str(tmp_path / "test.db"))
+    manager = DatabaseManager(db_path=str(tmp_path / "test.db"))
     manager.initialize()
     return manager
 

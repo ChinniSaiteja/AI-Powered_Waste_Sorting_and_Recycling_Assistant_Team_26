@@ -4,19 +4,11 @@ Owner: Ha Le Thu
 
 GuidanceService: disposal guidance + a short AI explanation for each result.
 
-Flow of explain(label):
-    1. look up the Dortmund rule in the database           (DatabaseManager.get_rule)
-    2. cached AI answer for this item?  -> return it        (no API call, no cost)
-    3. no API key / daily limit reached -> fallback text    (the official rule)
-    4. otherwise call the AI, cache the answer, count the call
-    5. if the AI call fails             -> fallback text    (the app never breaks)
+explain(label): cache -> AI (if a key is set and under the daily limit) -> fallback
+to the official rule. The app never breaks, even without an AI key.
 
-Works with OpenAI or any OpenAI-compatible provider (Groq, Gemini).
-Settings in .env (no code change to switch provider):
-    AI_API_KEY=...            (or OPENAI_API_KEY)
-    AI_BASE_URL=...           empty = OpenAI, e.g. https://api.groq.com/openai/v1
-    AI_MODEL=...              e.g. gpt-4o-mini, llama-3.3-70b-versatile
-    AI_DAILY_LIMIT=200
+Works with OpenAI or any OpenAI-compatible provider (Groq, Gemini); set
+AI_API_KEY, AI_BASE_URL, AI_MODEL, AI_DAILY_LIMIT in .env, no code change needed.
 """
 
 import os
@@ -54,8 +46,7 @@ class GuidanceService:
         except ImportError:
             return None
         base_url = os.getenv("AI_BASE_URL") or None
-        # NFR "AI answer < 5 s": no automatic retries (a retry after a timeout or a
-        # rate limit can make the user wait 30 s). If the AI is slow -> fallback text.
+        # no retries, so a slow AI falls back quickly instead of making the user wait
         timeout = float(os.getenv("AI_TIMEOUT", "8"))
         return OpenAI(api_key=api_key, base_url=base_url, timeout=timeout, max_retries=0)
 
@@ -135,16 +126,14 @@ class GuidanceService:
             "Recyclinghof) and say they should check the local waste company website."
         )
 
-    def __ask_model(self, prompt: str, system_prompt: str | None = None) -> str:
+    def __ask_model(self, prompt: str) -> str:
         response = self.__client.chat.completions.create(
             model=self.__model,
             messages=[
-                {"role": "system", "content": system_prompt or self.DEFAULT_SYSTEM_PROMPT},
+                {"role": "system", "content": self.DEFAULT_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            # newer "reasoning" models (e.g. Gemini) use tokens for thinking first;
-            # too small a limit cuts answers off. Change with AI_MAX_TOKENS in .env.
-            max_tokens=int(os.getenv("AI_MAX_TOKENS", "1500")),
+            max_tokens=int(os.getenv("AI_MAX_TOKENS", "1500")),  # Gemini needs more room than GPT
             temperature=0.3,
         )
         answer = (response.choices[0].message.content or "").strip()

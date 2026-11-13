@@ -1,6 +1,5 @@
 """
-Capstone additions to Subsystem 4 (Ha Le Thu): dashboard records/statistics for Kanika.
-The AI is MOCKED: no API key, no internet, no cost.
+dashboard records/statistics.
 """
 
 import pytest
@@ -14,7 +13,7 @@ from tests.test_guidance import FakeAIClient
 
 @pytest.fixture
 def db(tmp_path):
-    manager = DatabaseManager(engine="sqlite", db_path=str(tmp_path / "test.db"))
+    manager = DatabaseManager(db_path=str(tmp_path / "test.db"))
     manager.initialize()
     return manager
 

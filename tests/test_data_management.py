@@ -18,7 +18,7 @@ from database.models import DisposalRule, WasteCategory, WasteItem
 @pytest.fixture
 def db(tmp_path):
     """A fresh database with the 72 Dortmund rules, created before each test."""
-    manager = DatabaseManager(engine="sqlite", db_path=str(tmp_path / "test.db"))
+    manager = DatabaseManager(db_path=str(tmp_path / "test.db"))
     manager.initialize()
     return manager
 
