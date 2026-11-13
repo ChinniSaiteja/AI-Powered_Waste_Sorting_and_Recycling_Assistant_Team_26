@@ -182,3 +182,12 @@ footer {
         flex-direction: column;
     }
 }
+
+.uncertain-warning {
+    background: #FFF4E5;
+    border-left: 4px solid #E69500;
+    color: #7A4B00;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+}

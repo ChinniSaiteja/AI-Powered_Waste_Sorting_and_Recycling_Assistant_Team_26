@@ -121,7 +121,13 @@ uploadForm.addEventListener("submit", async function (event) {
 
         document.getElementById("wasteName").textContent =
             result.waste_name;
-
+        
+        const warning = document.getElementById("uncertainWarning");
+        if (data.result.status === "uncertain") {
+           warning.classList.remove("hidden");
+        } else {
+           warning.classList.add("hidden");
+        }
         document.getElementById("category").textContent =
             result.category;
 
