@@ -78,15 +78,15 @@ Dashboard   ◄── MunicipalityDashboard     ◄── Stored classification 
 
 **Upload page:** choose an image from the gallery or take a photo.
 
-![Upload page](docs/screenshots/upload_page.png)
+![Upload page](docs/upload_page.png)
 
 **Classification result:** waste category, disposal instruction and AI explanation.
 
-![Classification result](docs/screenshots/result.png)
+![Classification result](docs/result.png)
 
 **Municipality dashboard:** statistics from all stored classifications.
 
-![Municipality dashboard](docs/screenshots/dashboardd.png)
+![Municipality dashboard](docs/dashboardd.png)
 
 ---
 
