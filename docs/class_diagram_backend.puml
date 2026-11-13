@@ -1,0 +1,98 @@
+@startuml
+
+title Backend & Application Integration - Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+class AnalysisService {
+    - _classifier
+    - _database_manager
+    - _guidance_service
+    - _result_handler
+    - _response_composer
+
+    + __init__(
+        classifier,
+        database_manager,
+        guidance_service,
+        result_handler,
+        response_composer
+    )
+
+    + classifier
+    + database_manager
+    + guidance_service
+
+    + initialize() : None
+
+    + analyze(
+        image_bytes : bytes,
+        region : str
+    ) : dict
+}
+
+class ClassificationResultHandler {
+    - _default_region : str
+    {static} DEFAULT_REGION : str
+
+    + __init__(
+        default_region : str
+    )
+
+    + default_region : str
+
+    + initialize() : None
+
+    + handle(
+        prediction : dict,
+        region : str
+    ) : dict
+}
+
+class ResponseComposer {
+    - _initialized : bool
+
+    + __init__()
+
+    + initialized : bool
+
+    + initialize() : None
+
+    + compose(
+        classification : dict,
+        guidance : dict,
+        classification_id : int
+    ) : dict
+}
+
+class MLClassifier <<external>> {
+    + classify(
+        image_bytes : bytes
+    ) : dict
+}
+
+class GuidanceService <<external>> {
+    + get_guidance(
+        label : str,
+        region : str
+    ) : dict
+}
+
+class DatabaseManager <<external>> {
+    + save_classification(
+        label : str,
+        confidence : float,
+        status : str,
+        region : str
+    ) : int
+}
+
+AnalysisService --> MLClassifier : classify image
+AnalysisService --> ClassificationResultHandler : validate result
+AnalysisService --> GuidanceService : request guidance
+AnalysisService --> DatabaseManager : save result
+AnalysisService --> ResponseComposer : compose response
+
+@enduml
