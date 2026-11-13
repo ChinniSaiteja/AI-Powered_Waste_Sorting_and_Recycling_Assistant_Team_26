@@ -1,102 +1,108 @@
-
-
-import os
 import sys
+from pathlib import Path
 
-from flask import Flask, jsonify, request  # type: ignore[import-not-found]
+from flask import Flask, jsonify, render_template, request  # type: ignore[import-not-found]
+
+from dashboard.municipality_dashboard import MunicipalityDashboard
 from web_interface.analysis_controller import AnalysisController
 from web_interface.classification_result_view import ClassificationResultView
 from web_interface.waste_upload_view import WasteUploadView
 
-# Make the project root importable (database/ lives next to this folder)
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
+# The database/ folder is in the project root, one level above this file
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(PROJECT_ROOT))
 from database.db import DatabaseManager  # noqa: E402
-from database.exceptions import DataManagementError  # noqa: E402
-from database.guidance import GuidanceService  # noqa: E402
 
 app = Flask(__name__)
 
 # Limit uploaded files to 10 MB
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
+
 # ---------------------------------------------------------------------------
-# Data Management & AI Guidance (Ha) - database + AI explanations
+# Database connection (created once when the app starts)
 # ---------------------------------------------------------------------------
-DEFAULT_REGION = "Dortmund"
+# DB_ENGINE in .env decides: sqlite (default, nothing to install) or mysql
 database_manager = DatabaseManager()
-database_manager.initialize()          # creates database/waste.db + Dortmund rules on first start
-guidance_service = GuidanceService(database_manager)
+database_manager.initialize()  # creates the tables and loads the rules the first time
 
 
 # ---------------------------------------------------------------------------
-# Classifier connection (Azi)
+# Classifier connection
 # ---------------------------------------------------------------------------
-# Load the real model ONCE here, when the app starts (not on every request):
-#   from classifier import WasteClassifier
-#   classifier = WasteClassifier()
-#   classifier.warm_up()
+REGION = "Dortmund"
+UNCERTAIN_THRESHOLD = 0.6  # below this confidence a result is stored as "uncertain"
+
+# Load the real model ONCE here, when the app starts (not on every request).
+# Replace this line when the classifier is ready, e.g.:
+#   from ml_classifier.classifier import WasteClassifier
+#   classifier = WasteClassifier("path/to/model")
 classifier = None
 
+# While there is no classifier, use the first label the database knows,
+# so the database lookup (Step B) can already be tested with real rules.
+_known_items = database_manager.get_all_items()
+PLACEHOLDER_LABEL = _known_items[0].label if _known_items else "glass jar"
 
-class ImageRejectedError(ValueError):
-    """The classifier could not use the image (status 'invalid_image')."""
+
+class UnknownWasteItemError(Exception):
+    """The classifier returned a label that has no disposal rule in the database."""
+
+    def __init__(self, label):
+        super().__init__(f"No disposal rule found for '{label}'.")
+        self.label = label
 
 
-def classify_image(image_bytes, region=DEFAULT_REGION):
+def classify_image(image_bytes):
     """
-    Sends the image to the classifier, looks up the Dortmund rule, gets the
-    AI explanation and saves the result. Returns a dict in the format that
-    ClassificationResultView.display_result() expects (plus extra fields).
+    Classifies the image and returns a dict in the format that
+    ClassificationResultView.display_result() expects.
+
+    This is the ONLY function that changes when the classifier and the
+    AI guidance are connected.
     """
-    # --- Step A: classifier -> {"status", "label", "category", "confidence", "message"}
+    # --- Step A: label + confidence from the classifier ---------------------
     if classifier is None:
-        # TEMPORARY placeholder until the real classifier is connected
-        prediction = {"status": "completed", "label": "plastic bottle",
-                      "category": "recyclable", "confidence": 0.94}
+        prediction = {"label": PLACEHOLDER_LABEL, "confidence": 0.94}  # TEMPORARY
     else:
-        prediction = classifier.classify(image_bytes)
+        # Adjust this line to how your colleague's classifier is called
+        prediction = classifier.predict(image_bytes)
 
-    status = prediction.get("status", "completed")
-    if status == "invalid_image":
-        raise ImageRejectedError(prediction.get("message") or "The image could not be read.")
-    if status not in ("completed", "uncertain"):          # "error" -> model failed
-        raise RuntimeError(prediction.get("message") or "Classifier error.")
+    # Labels in the database are lowercase with spaces, e.g. "glass jar"
+    label = str(prediction["label"]).strip().lower().replace("_", " ")
+    confidence = float(prediction["confidence"])
+    if confidence > 1:  # classifier returned a percentage, e.g. 94 -> 0.94
+        confidence = confidence / 100
+    status = "completed" if confidence >= UNCERTAIN_THRESHOLD else "uncertain"
 
-    label = str(prediction["label"]).strip().lower()
-    confidence = prediction.get("confidence")
+    # --- Step B: disposal rule from the database ----------------------------
+    rule = database_manager.get_rule(label, region=REGION)
+    if rule is None:
+        if classifier is not None:
+            database_manager.save_classification(label, confidence, "uncertain", region=REGION)
+        raise UnknownWasteItemError(label)
 
-    # --- Step B: Dortmund rule + AI explanation (Ha's GuidanceService) --------
-    rule = database_manager.get_rule(label, region)
-    explanation = guidance_service.explain(label, region, rule=rule)
+    disposal_instruction = f"{rule['bin_type']}: {rule['instruction']}"
+    if rule["is_deposit"]:
+        disposal_instruction += " (Deposit item - return it to a deposit machine.)"
 
-    # --- Step C: save the result for the dashboard ----------------------------
-    classification_id = database_manager.save_classification(
-        label, confidence=confidence, status=status, region=region)
+    # --- Step C: educational explanation ------------------------------------
+    # Later: ask the backend's GuidanceService (OpenAI) for the explanation.
+    # For now: use an explanation that is already stored in the database, if any.
+    explanation = (database_manager.get_cached_guidance(label)
+                   or "An educational explanation will be available soon.")
 
-    category = (rule or {}).get("category") or prediction.get("category") or "landfill"
-    if rule:
-        disposal_instruction = f"{rule['bin_type']}: {rule['instruction']}"
-    else:
-        disposal_instruction = (f"No local rule for '{label}' yet. "
-                                "Please check the EDG Dortmund website (www.edg.de).")
+    # --- Save the result, so it appears on the dashboard --------------------
+    # Only real classifier results are stored (no placeholder data).
+    if classifier is not None:
+        database_manager.save_classification(label, confidence, status, region=REGION)
+
     return {
         "waste_name": label.capitalize(),
-        "category": category,
+        "category": rule["category"],
         "confidence": confidence,
         "disposal_instruction": disposal_instruction,
-        "explanation": explanation["explanation"],
-        # extra fields for the result page
-        "classification_id": classification_id,
-        "label": label,
-        "status": status,
-        "message": prediction.get("message", ""),
-        "bin_type": (rule or {}).get("bin_type"),
-        "is_deposit": (rule or {}).get("is_deposit", False),
-        "explanation_ai_generated": explanation["ai_generated"],
-        "region": region,
+        "explanation": explanation,
     }
 
 
@@ -105,27 +111,7 @@ def classify_image(image_bytes, region=DEFAULT_REGION):
 # ---------------------------------------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Waste Sorting Assistant</title>
-    </head>
-    <body>
-        <h1>AI-Powered Waste Sorting Assistant</h1>
-
-        <form action="/analyse" method="POST"
-              enctype="multipart/form-data">
-
-            <label>Select a waste image:</label>
-            <input type="file" name="image"
-                   accept=".png,.jpg,.jpeg" required>
-
-            <button type="submit">Analyse Image</button>
-        </form>
-    </body>
-    </html>
-    """
+    return render_template("index.html")
 
 
 @app.route("/analyse", methods=["POST"])
@@ -165,24 +151,19 @@ def analyse_image():
     image_bytes = image.read()
     image.seek(0)
 
-    region = request.form.get("region", DEFAULT_REGION).strip() or DEFAULT_REGION
-
     try:
-        classification = classify_image(image_bytes, region)
+        classification = classify_image(image_bytes)
         formatted_result = result_view.display_result(classification)
-    except ImageRejectedError as error:          # classifier status "invalid_image"
-        return jsonify(result_view.display_error(str(error))), 400
+    except UnknownWasteItemError:
+        return jsonify(result_view.display_error(
+            "This item could not be matched to a disposal rule. "
+            "Please try another photo."
+        )), 422
     except Exception:
         analysis_controller.handle_error("Classification service unavailable.")
         return jsonify(result_view.display_error(
             analysis_controller.error_message
         )), 503
-
-    # Extra fields for the result page (feedback button, deposit hint, AI label,
-    # "uncertain" message)
-    for key in ("classification_id", "label", "status", "message", "bin_type",
-                "is_deposit", "explanation_ai_generated", "region"):
-        formatted_result[key] = classification.get(key)
 
     # Step 5: Send the result back to the webpage
     return jsonify({
@@ -192,63 +173,22 @@ def analyse_image():
     })
 
 
-# ---------------------------------------------------------------------------
-# Data Management & AI Guidance routes (JSON)
-# ---------------------------------------------------------------------------
-@app.route("/feedback", methods=["POST"])
-def submit_feedback():
-    """'Wrong result?' button. JSON: classification_id, is_correct, correct_label (optional)."""
-    data = request.get_json(silent=True) or {}
+@app.route("/dashboard", methods=["GET"])
+def dashboard():
     try:
-        database_manager.save_feedback(
-            int(data["classification_id"]),
-            bool(data.get("is_correct", False)),
-            data.get("correct_label") or None,
-        )
-    except DataManagementError as error:          # unknown id / feedback already given
-        return jsonify({"status": "error", **error.to_dict()}), error.http_status
-    except (KeyError, TypeError, ValueError):
-        return jsonify({"status": "error",
-                        "message": "classification_id (number) is required."}), 400
-    return jsonify({"status": "success"})
+        municipality_dashboard = MunicipalityDashboard(database_manager, region="Dortmund")
+        municipality_dashboard.load_data()
+    except Exception as error:
+        return render_template("dashboard.html", error=str(error)), 500
 
-
-@app.route("/ask", methods=["POST"])
-def ask_question():
-    """Follow-up question to the AI. JSON: question, label (optional), region (optional)."""
-    data = request.get_json(silent=True) or {}
-    try:
-        answer = guidance_service.ask(
-            data.get("question", ""),
-            label=data.get("label") or None,
-            region=data.get("region") or DEFAULT_REGION,
-        )
-    except DataManagementError as error:          # empty or too long question
-        return jsonify({"status": "error", **error.to_dict()}), error.http_status
-    return jsonify({"status": "success", **answer})
-
-
-def _region_arg():
-    """?region=Dortmund (default) or ?region=all"""
-    region = request.args.get("region", DEFAULT_REGION)
-    return None if region.lower() == "all" else region
-
-
-@app.route("/api/dashboard/stats", methods=["GET"])
-def dashboard_stats():
-    """Dashboard statistics (Kanika's MunicipalityDashboard)."""
-    return jsonify(database_manager.get_stats(_region_arg()))
-
-
-@app.route("/api/dashboard/records", methods=["GET"])
-def dashboard_records():
-    """Latest classification records. ?region=Dortmund&limit=50"""
-    try:
-        records = database_manager.get_classification_records(
-            _region_arg(), request.args.get("limit", 50))
-    except DataManagementError as error:
-        return jsonify({"status": "error", **error.to_dict()}), error.http_status
-    return jsonify(records)
+    return render_template(
+        "dashboard.html",
+        error=None,
+        region=municipality_dashboard.get_region_name(),
+        total=municipality_dashboard.get_total_analysed_items(),
+        recyclable_percentage=municipality_dashboard.get_recyclable_percentage(),
+        distribution=municipality_dashboard.get_category_distribution(),
+    )
 
 
 @app.errorhandler(413)

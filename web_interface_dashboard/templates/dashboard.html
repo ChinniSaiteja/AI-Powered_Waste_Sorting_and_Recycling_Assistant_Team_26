@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Municipality Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+
+<body>
+
+    <header>
+        <h1>Municipality Dashboard</h1>
+        <p>Waste classification statistics{% if region %} - {{ region }}{% endif %}</p>
+        <nav><a href="/">&larr; Back to Waste Sorting Assistant</a></nav>
+    </header>
+
+    <main class="container">
+        <section class="card">
+
+            <h2>&#128200; Municipality dashboard</h2>
+
+            {% if error %}
+                <p class="error">The dashboard could not be loaded: {{ error }}</p>
+            {% else %}
+
+                <!-- Key figures -->
+                <div class="kpi-row">
+                    <div class="kpi">
+                        <span>Analysed items</span>
+                        <strong>{{ "{:,}".format(total) }}</strong>
+                    </div>
+                    <div class="kpi">
+                        <span>Classified recyclable</span>
+                        <strong>{{ recyclable_percentage | round | int }}%</strong>
+                    </div>
+                </div>
+
+                <!-- Category distribution -->
+                <h3>Waste category distribution</h3>
+                {% if total == 0 %}
+                    <p class="empty">No classifications stored yet.</p>
+                {% else %}
+                    {% for category in distribution %}
+                        <div class="bar-item">
+                            <div class="bar-label">
+                                <span>{{ category.name }}</span>
+                                <strong>{{ category.percent }}%</strong>
+                            </div>
+                            <div class="bar-track">
+                                <div class="bar-fill"
+                                     style="width: {{ category.percent }}%; background: {{ category.colour }};"></div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+
+                <p class="footnote">
+                    Figures are calculated from all stored classification records.
+                </p>
+
+            {% endif %}
+        </section>
+    </main>
+
+    <footer>
+        <p>Waste Sorting Assistant | Municipality Dashboard</p>
+    </footer>
+
+</body>
+</html>
