@@ -31,16 +31,7 @@ class GuidanceService:
     """Combines the database rules with short AI explanations."""
 
     DEFAULT_MODEL = "gpt-4o-mini"
-    MAX_QUESTION_LENGTH = 300
     DEFAULT_SYSTEM_PROMPT = "You are a helpful recycling assistant for German cities."
-    CHAT_SYSTEM_PROMPT = (
-        "You are a friendly recycling assistant for {region}, Germany. Only answer questions "
-        "about waste sorting, recycling and reducing waste. If the question is about another "
-        "topic, politely say you can only help with waste and recycling. Never contradict the "
-        "official local rule you are given. Answer in plain English in at most 3 short sentences."
-    )
-    FALLBACK_ANSWER = ("The AI assistant is not available right now. Please follow the disposal "
-                       "instruction above or check the EDG Dortmund website (www.edg.de).")
 
     # 1. Constructor
     def __init__(self, db: DatabaseManager, client=None, daily_limit: int | None = None,
@@ -125,48 +116,6 @@ class GuidanceService:
             self.__db.save_guidance(label, answer)
         return self.__result(answer, "ai")
 
-    def ask(self, question: str, label: str | None = None,
-            region: str = DisposalRule.DEFAULT_REGION) -> dict:
-        """Answer a citizen's follow-up question (chat box on the result page).
-
-        Returns {"answer": str, "source": "cache" | "ai" | "fallback", "ai_generated": bool}
-        Only the question, the item label and the official rule are sent to the AI.
-        """
-        question = str(question or "").strip()
-        if not question:
-            raise InvalidDataError("question", question, "must not be empty")
-        if len(question) > self.MAX_QUESTION_LENGTH:
-            raise InvalidDataError("question", question[:30] + "...",
-                                   f"must be at most {self.MAX_QUESTION_LENGTH} characters")
-        label = label.strip().lower() if label else None
-        rule = self.__db.get_rule(label, region) if label else None
-
-        if label:
-            cached = self.__db.get_cached_guidance(label, question)
-            if cached:
-                return self.__answer(cached, "cache")
-
-        today = date.today().isoformat()
-        if not self.ai_enabled or self.__db.get_ai_usage(today) >= self.__daily_limit:
-            return self.__answer(self.FALLBACK_ANSWER, "fallback")
-
-        context = ""
-        if rule:
-            context = (f"The citizen is asking about '{label}'. Official rule: "
-                       f"'{rule['bin_type']}' - {rule['instruction']} ")
-        elif label:
-            context = f"The citizen is asking about '{label}' (no official rule stored). "
-        try:
-            answer = self.__ask_model(f"{context}Question: {question}",
-                                      self.CHAT_SYSTEM_PROMPT.format(region=region))
-        except Exception:
-            return self.__answer(self.FALLBACK_ANSWER, "fallback")
-
-        self.__db.increment_ai_usage(today)
-        if rule is not None:
-            self.__db.save_guidance(label, answer, question)
-        return self.__answer(answer, "ai")
-
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -214,7 +163,3 @@ class GuidanceService:
     @staticmethod
     def __result(text: str, source: str) -> dict:
         return {"explanation": text, "source": source, "ai_generated": source in ("ai", "cache")}
-
-    @staticmethod
-    def __answer(text: str, source: str) -> dict:
-        return {"answer": text, "source": source, "ai_generated": source in ("ai", "cache")}

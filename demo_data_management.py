@@ -50,16 +50,15 @@ def demo_database() -> None:
     print("\n=== 5. DatabaseManager ===")
     db = DatabaseManager()
     loaded = db.initialize()
-    print(f"Engine: {db.engine} | rules loaded now: {loaded} (0 = already in database)")
+    print(f"Database file: {db.db_path} | rules loaded now: {loaded} (0 = already in database)")
     print(f"Known items: {len(db.get_all_items())}")
 
     for label in ("glass jar", "plastic bottle", "banana peel", "unknown thing"):
         print(f"get_rule('{label}') ->", db.get_rule(label))
 
-    cid = db.save_classification("glass jar", confidence=0.92)
+    db.save_classification("glass jar", confidence=0.92)
     db.save_classification("banana peel", confidence=0.88)
     db.save_classification("plastic bottle", confidence=0.41, status="uncertain")
-    db.save_feedback(cid, is_correct=True)
     print("\nget_stats() ->", db.get_stats())
 
 

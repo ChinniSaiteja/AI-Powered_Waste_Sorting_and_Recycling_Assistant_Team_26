@@ -79,16 +79,6 @@ def test_stats_count_new_classifications(db):
     assert stats["uncertain_count"] == 1
 
 
-def test_feedback_errors(db):
-    """Feedback for an unknown classification or a second feedback is rejected."""
-    with pytest.raises(ItemNotFoundError):
-        db.save_feedback(999, is_correct=False)
-    cid = db.save_classification("glass jar", 0.92)
-    db.save_feedback(cid, is_correct=True)
-    with pytest.raises(InvalidDataError):           # UNIQUE: only 1 feedback per result
-        db.save_feedback(cid, is_correct=False)
-
-
 def test_all_errors_share_one_base_class():
     """One `except DataManagementError` catches every error of this subsystem."""
     for error_class in (InvalidDataError, ItemNotFoundError):

@@ -1,6 +1,5 @@
 """
-Capstone additions to Subsystem 4 (Ha Le Thu):
-dashboard records/statistics for Kanika and the follow-up question chat (FR 7).
+Capstone additions to Subsystem 4 (Ha Le Thu): dashboard records/statistics for Kanika.
 The AI is MOCKED: no API key, no internet, no cost.
 """
 
@@ -80,39 +79,3 @@ def test_demo_data_fills_the_dashboard(db):
     stats = db.get_stats(region=None)
     assert stats["total_items"] == 100
     assert sum(stats["category_percentages"].values()) == pytest.approx(100, abs=0.2)
-
-
-# ---------------------------------------------------------------- chat (FR 7)
-def test_question_is_answered_and_cached(db):
-    fake = FakeAIClient("No, leave the cap on.")
-    service = GuidanceService(db, client=fake)
-    first = service.ask("Do I remove the cap?", label="plastic bottle")
-    second = service.ask("Do I remove the cap?", label="plastic bottle")
-    assert first == {"answer": "No, leave the cap on.", "source": "ai", "ai_generated": True}
-    assert second["source"] == "cache"
-    assert fake.calls == 1
-    # the explanation cache (question = NULL) is not mixed up with question answers
-    assert db.get_cached_guidance("plastic bottle") is None
-
-
-def test_question_prompt_has_rule_and_topic_limit(db):
-    captured = {}
-
-    class SpyClient(FakeAIClient):
-        def create(self, **kwargs):
-            captured.update(kwargs)
-            return super().create(**kwargs)
-
-    GuidanceService(db, client=SpyClient()).ask("Where does it go?", label="glass jar")
-    system, user = captured["messages"][0]["content"], captured["messages"][1]["content"]
-    assert "Only answer questions about waste" in system
-    assert "Altglascontainer" in user
-
-
-def test_question_validation_and_fallback(db):
-    service = GuidanceService(db, client=FakeAIClient(fail=True))
-    with pytest.raises(InvalidDataError):
-        service.ask("   ")
-    with pytest.raises(InvalidDataError):
-        service.ask("x" * 301)
-    assert service.ask("What is Pfand?")["source"] == "fallback"

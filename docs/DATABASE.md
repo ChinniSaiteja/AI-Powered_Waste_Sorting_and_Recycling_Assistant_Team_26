@@ -1,18 +1,21 @@
 # Database Design – Team 26 (Waste Sorting & Recycling Assistant)
 
 **Owner:** Ha Le Thu – Subsystem 4: Data Management & AI Guidance
-**DBMS:** SQLite (default, nothing to install) or MySQL 8 - switch with `DB_ENGINE` in `.env`
-**Schema:** `database/schema_sqlite.sql`, `database/schema_mysql.sql` (created automatically by `DatabaseManager.initialize()`)
+**DBMS:** SQLite (file `database/waste.db`, created automatically, nothing to install)
+**Schema:** `database/schema_sqlite.sql` (applied automatically by `DatabaseManager.initialize()`)
 **Rule:** all SQL lives in `database/db.py` (`DatabaseManager`). Other subsystems never write SQL – they call `DatabaseManager` methods.
+
+Kept deliberately simple: no admin accounts, no "wrong result" feedback and no AI chat
+box, because nobody on the team uses those yet. Less for everyone to read and explain.
 
 ---
 
-## 1. Overview (8 tables)
+## 1. Overview (6 tables)
 
 ```
-waste_categories 1 ──< waste_items 1 ──< disposal_rules >── 0..1 admin_users
+waste_categories 1 ──< waste_items 1 ──< disposal_rules
                             │
-                            ├──< classifications 1 ── 0..1 user_feedback
+                            ├──< classifications
                             │
                             └──< ai_guidance
 
@@ -21,36 +24,25 @@ ai_usage_log  (stand-alone, one row per day)
 
 | # | Table | What it stores | Written by | Read by |
 |---|-------|----------------|------------|---------|
-| 1 | `admin_users` | Municipal staff accounts (hashed passwords) | Ha Le Thu (seed) | Backend (login) |
-| 2 | `waste_categories` | recyclable / compostable / landfill | Ha Le Thu (seed, fixed) | Everyone |
-| 3 | `waste_items` | Every label the classifier can return | Ha Le Thu (seed) | Backend |
-| 4 | `disposal_rules` | Bin + instruction per item and region | Ha Le Thu (seed), admins | Backend → Web |
-| 5 | `classifications` | One row per analysed photo (no image!) | Backend | Dashboard |
-| 6 | `user_feedback` | "Wrong result?" answers | Backend | Dashboard, Classifier (evaluation) |
-| 7 | `ai_guidance` | Cached OpenAI answers | Ha Le Thu (GuidanceService) | Backend → Web |
-| 8 | `ai_usage_log` | OpenAI calls per day | Ha Le Thu (GuidanceService) | Ha Le Thu (daily limit) |
+| 1 | `waste_categories` | recyclable / compostable / landfill | Ha Le Thu (seed, fixed) | Everyone |
+| 2 | `waste_items` | Every label the classifier can return | Ha Le Thu (seed) | Backend |
+| 3 | `disposal_rules` | Bin + instruction per item and region | Ha Le Thu (seed) | Backend → Web |
+| 4 | `classifications` | One row per analysed photo (no image!) | Backend | Dashboard |
+| 5 | `ai_guidance` | Cached AI explanations | Ha Le Thu (GuidanceService) | Backend → Web |
+| 6 | `ai_usage_log` | AI calls per day | Ha Le Thu (GuidanceService) | Ha Le Thu (daily limit) |
 
 ---
 
 ## 2. Tables in detail
 
-### 1. `admin_users`
-| Column | Type | Notes |
-|---|---|---|
-| id | INT PK | |
-| username | VARCHAR(50) UNIQUE NOT NULL | |
-| password_hash | VARCHAR(255) NOT NULL | e.g. `werkzeug.security.generate_password_hash` |
-| region | VARCHAR(50) | region this admin manages, default `Dortmund` |
-| created_at | DATETIME | |
-
-### 2. `waste_categories`
+### 1. `waste_categories`
 | Column | Type | Notes |
 |---|---|---|
 | id | INT PK | |
 | name | VARCHAR(20) UNIQUE | **only** `recyclable`, `compostable`, `landfill` |
 | description | VARCHAR(255) | |
 
-### 3. `waste_items`
+### 2. `waste_items`
 | Column | Type | Notes |
 |---|---|---|
 | id | INT PK | |
@@ -58,7 +50,7 @@ ai_usage_log  (stand-alone, one row per day)
 | label | VARCHAR(100) UNIQUE | **must match the classifier label exactly** (lowercase, e.g. `glass jar`) |
 | is_deposit | BOOLEAN | `TRUE` = Pfand bottle → return to store |
 
-### 4. `disposal_rules`
+### 3. `disposal_rules`
 | Column | Type | Notes |
 |---|---|---|
 | id | INT PK | |
@@ -66,16 +58,15 @@ ai_usage_log  (stand-alone, one row per day)
 | region | VARCHAR(50) | MVP: only `Dortmund`; more cities = more rows, no code change |
 | bin_type | VARCHAR(100) | e.g. `Glass container`, `Biotonne (brown bin)` |
 | instruction | TEXT | short text shown to the user |
-| updated_by | INT FK → admin_users, NULL | last admin who edited |
 | updated_at | DATETIME | auto-updated |
 
 Constraint: `UNIQUE (item_id, region)` → one rule per item per region.
 
-### 5. `classifications`
+### 4. `classifications`
 | Column | Type | Notes |
 |---|---|---|
 | id | INT PK | |
-| item_id | INT FK → waste_items, NULL | NULL when the label is not in our DB (→ OpenAI fallback) |
+| item_id | INT FK → waste_items, NULL | NULL when the label is not in our DB |
 | predicted_label | VARCHAR(100) | raw label from the classifier |
 | confidence | DECIMAL(5,4), NULL | 0–1 (e.g. `0.9200`), NULL if not available |
 | status | VARCHAR(20) | `completed` / `uncertain` / `failed` |
@@ -84,32 +75,22 @@ Constraint: `UNIQUE (item_id, region)` → one rule per item per region.
 
 Privacy: **no image or image path is stored**, only the result.
 
-### 6. `user_feedback`
-| Column | Type | Notes |
-|---|---|---|
-| id | INT PK | |
-| classification_id | INT FK → classifications, UNIQUE | max 1 feedback per classification |
-| is_correct | BOOLEAN | |
-| correct_label | VARCHAR(100), NULL | filled when `is_correct = FALSE` |
-| created_at | DATETIME | |
-
-### 7. `ai_guidance`
+### 5. `ai_guidance`
 | Column | Type | Notes |
 |---|---|---|
 | id | INT PK | |
 | item_id | INT FK → waste_items | |
-| question | VARCHAR(500), NULL | NULL = default explanation; text = user follow-up question |
-| answer | TEXT | OpenAI answer (shown as "AI-generated") |
+| answer | TEXT | AI explanation for that item (shown as "AI-generated") |
 | created_at | DATETIME | |
 
-Before calling OpenAI we check this table first (cache) → lower cost and faster.
+Before calling the AI we check this table first (cache) → lower cost and faster.
 
-### 8. `ai_usage_log`
+### `ai_usage_log`
 | Column | Type | Notes |
 |---|---|---|
 | id | INT PK | |
 | usage_date | DATE UNIQUE | |
-| request_count | INT | +1 per OpenAI call; stop when daily limit is reached |
+| request_count | INT | +1 per AI call; stop when the daily limit is reached |
 
 ---
 
@@ -121,9 +102,7 @@ All access goes through `DatabaseManager` (and `GuidanceService` for AI).
 |---|---|---|
 | **Backend (Sai Teja)** | `get_rule(label, region="Dortmund")` | `{"label", "category", "is_deposit", "region", "bin_type", "instruction"}` or `None` |
 | **Backend** | `save_classification(label, confidence, status, region)` | new `classification_id` |
-| **Backend** | `save_feedback(classification_id, is_correct, correct_label=None)` | `None` |
 | **Backend** | `GuidanceService.explain(label, region, rule=None)` | `{"explanation", "source": "cache"/"ai"/"fallback", "ai_generated"}` |
-| **Backend** | `GuidanceService.ask(question, label=None, region)` | `{"answer", "source", "ai_generated"}` (follow-up question, max 300 characters) |
 | **Dashboard (Kanika)** | `get_stats(region, date_from=None, date_to=None, top_n=5)` | see below; `region=None` = all regions |
 | **Dashboard (Kanika)** | `get_classification_records(region, limit=50)` | latest results, newest first (see below) |
 | **Classifier (Azam)** | `get_all_items()` | list of the 72 known labels → classifier labels must match these |
@@ -139,8 +118,7 @@ All access goes through `DatabaseManager` (and `GuidanceService` for AI).
   "per_day": [{"date": "2026-11-04", "count": 12}],
   "top_items": [{"label": "plastic bottle", "waste_name": "Plastic bottle", "count": 22}],
   "region_counts": {"Dortmund": 124},
-  "uncertain_count": 9,
-  "wrong_feedback_count": 5
+  "uncertain_count": 9
 }
 ```
 `recycling_rate` is 0-1. `category_percentages` (0-100) only count items with a known
@@ -165,8 +143,6 @@ for this item yet). `category` and `bin_type` are `null` for labels that are not
 | Route | Purpose |
 |---|---|
 | `POST /analyse` | upload image → classifier → rule + AI explanation (`GuidanceService.explain`) → saved |
-| `POST /ask` | JSON `{"question", "label"?, "region"?}` → AI answer (`GuidanceService.ask`) |
-| `POST /feedback` | JSON `{"classification_id", "is_correct", "correct_label"?}` (`save_feedback`) |
 | `GET /dashboard` | Kanika's HTML dashboard, built from `get_stats()` via `MunicipalityDashboard` |
 
 There is no separate JSON API for the dashboard numbers; `get_stats()` and
@@ -202,7 +178,7 @@ ORDER BY day;
 2. **Sai Teja:** confidence is sent as a float 0–1 (not 0–100); status is one of `completed / uncertain / failed`.
 3. **Kanika:** dashboard uses the `get_stats()` and `get_classification_records()` JSON above – tell Ha if you need another chart.
 4. **Classifier statuses:** `completed` and `uncertain` are saved; `invalid_image` (HTTP 400) and `error` (HTTP 503) are not saved.
-5. **Everyone:** DB password and AI key go in `.env` (never pushed to GitHub).
+5. **Everyone:** the AI key goes in `.env` (never pushed to GitHub).
 
 ### AI settings (`.env`)
 | Variable | Default | Meaning |
@@ -220,7 +196,7 @@ ORDER BY day;
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env          # default DB_ENGINE=sqlite -> nothing else to set up
+cp .env.example .env                          # nothing else to set up for SQLite
 python demo_data_management.py                # creates the database and loads 72 Dortmund rules
 ```
 
@@ -237,27 +213,13 @@ No manual SQL import is needed - tables and data are created automatically.
 
 ---
 
-## 6. Optional: setting up MySQL locally
+## 6. Not built (on purpose, for the MVP)
 
-Each team member uses their **own** MySQL user and password on their own machine (never shared, never committed).
+These were considered but left out, because nobody on the team uses them yet.
+Could be added later without changing the rest of the schema:
 
-Run once as `root` (terminal `mysql -u root -p` or DBeaver SQL editor, one statement at a time):
-```sql
-CREATE DATABASE IF NOT EXISTS waste_db
-  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'waste_user'@'localhost' IDENTIFIED BY 'YourPassword1!';
-GRANT ALL PRIVILEGES ON waste_db.* TO 'waste_user'@'localhost';
-SHOW GRANTS FOR 'waste_user'@'localhost';
-```
-Password tips: MySQL may require 8+ characters with upper case, lower case, a number and a special character. Avoid `#`, spaces and quotes (they break `.env`).
-
-Then in your `.env`:
-```
-DB_ENGINE=mysql
-DB_USER=waste_user
-DB_PASSWORD=YourPassword1!
-DB_NAME=waste_db
-```
-Run `python demo_data_management.py` - tables and the 72 rules are created automatically.
-
-DBeaver tip: if you get `Public Key Retrieval is not allowed`, set `allowPublicKeyRetrieval=true` and `useSSL=false` in *Driver properties*.
+- **Admin accounts / login** to edit rules from a web page.
+- **"Wrong result?" feedback** from users.
+- **AI chat box** for follow-up questions on the result page.
+- **MySQL support.** The team only runs SQLite, so the extra engine-switching
+  code was removed to keep `database/db.py` simpler to read.

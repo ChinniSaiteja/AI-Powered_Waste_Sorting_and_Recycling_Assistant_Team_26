@@ -4,6 +4,7 @@
 ' (C) = Python class, (E) = database table that has no Python class.
 ' "-" = private (__name in Python), "+" = public
 ' Simplified on purpose: only the methods other subsystems actually call.
+' No admin accounts, feedback or AI chat - nobody on the team uses them yet.
 ' The full method list (seed, require_rule, get_all_items, AI cache,
 ' private helpers, ...) is in database/db.py and database/guidance.py.
 title Data Management & AI Guidance - Class Diagram
@@ -11,12 +12,10 @@ title Data Management & AI Guidance - Class Diagram
 skinparam classAttributeIconSize 0
 
 class DatabaseManager {
-  -__engine : str
   -__db_path : str
   +initialize() : int
   +get_rule(label : str, region : str) : dict
   +save_classification(label, confidence, status, region) : int
-  +save_feedback(classification_id, is_correct, correct_label) : None
   +get_stats(region, date_from, date_to) : dict
   +get_classification_records(region, limit) : list[dict]
 }
@@ -26,7 +25,6 @@ class GuidanceService {
   -__client : OpenAI
   +get_guidance(label : str, region : str) : dict
   +explain(label : str, region : str, rule : dict) : dict
-  +ask(question : str, label : str, region : str) : dict
 }
 
 class WasteCategory {
@@ -62,14 +60,6 @@ entity "AIUsageLog" as AIUsageLog <<table ai_usage_log>> {
   -request_count : int
 }
 
-entity "AdminUser" as AdminUser <<table admin_users>> {
-  -id : int
-  -username : str
-  -password_hash : str
-  -region : str
-  -created_at : datetime
-}
-
 entity "Classification" as Classification <<table classifications>> {
   -id : int
   -item_id : int
@@ -80,18 +70,9 @@ entity "Classification" as Classification <<table classifications>> {
   -created_at : datetime
 }
 
-entity "UserFeedback" as UserFeedback <<table user_feedback>> {
-  -id : int
-  -classification_id : int
-  -is_correct : bool
-  -correct_label : str
-  -created_at : datetime
-}
-
 entity "AIGuidance" as AIGuidance <<table ai_guidance>> {
   -id : int
   -item_id : int
-  -question : str
   -answer : str
   -created_at : datetime
 }
@@ -108,21 +89,17 @@ class ItemNotFoundError <<404>>
 class DatabaseConnectionError <<503>>
 
 DatabaseManager --> AIUsageLog : stores
-DatabaseManager --> AdminUser : manages
 DatabaseManager --> DisposalRule : manages
 DatabaseManager --> WasteCategory : manages
 DatabaseManager --> WasteItem : manages
 DatabaseManager --> Classification : stores
-DatabaseManager --> UserFeedback : stores
 DatabaseManager --> AIGuidance : stores
 GuidanceService "1" --> "1" DatabaseManager : uses
 GuidanceService --> AIGuidance : creates / retrieves
 
 WasteCategory "1" -- "0..*" WasteItem : contains
 WasteItem "1" -- "0..*" DisposalRule : has rules
-AdminUser "1" -- "0..*" DisposalRule : updates (updated_by)
 WasteItem "0..1" -- "0..*" Classification : classified as
-Classification "1" -- "0..1" UserFeedback : receives feedback
 WasteItem "1" -- "0..*" AIGuidance : has guidance
 
 DatabaseManager ..> DataManagementError : raises

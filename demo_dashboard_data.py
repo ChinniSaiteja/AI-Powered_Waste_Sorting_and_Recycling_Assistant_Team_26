@@ -30,15 +30,13 @@ def create_demo_data(db: DatabaseManager, count: int = 200, days: int = 30, seed
     for _ in range(count):
         confidence = round(rng.uniform(0.4, 0.99), 2)
         created = now - timedelta(days=rng.uniform(0, days))
-        cid = db.save_classification(
+        db.save_classification(
             rng.choices(labels, label_weights)[0],
             confidence=confidence,
             status="completed" if confidence >= 0.5 else "uncertain",
             region=rng.choices(regions, region_weights)[0],
             created_at=created.strftime("%Y-%m-%d %H:%M:%S"),
         )
-        if rng.random() < 0.05:
-            db.save_feedback(cid, is_correct=False, correct_label="glass jar")
     return count
 
 

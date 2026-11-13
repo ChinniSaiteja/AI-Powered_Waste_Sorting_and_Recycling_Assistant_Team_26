@@ -13,7 +13,6 @@ from web_interface.waste_upload_view import WasteUploadView
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 from database.db import DatabaseManager  # noqa: E402
-from database.exceptions import DataManagementError  # noqa: E402
 from database.guidance import GuidanceService  # noqa: E402
 
 app = Flask(__name__)
@@ -25,12 +24,11 @@ app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 # ---------------------------------------------------------------------------
 # Database connection (created once when the app starts)
 # ---------------------------------------------------------------------------
-# DB_ENGINE in .env decides: sqlite (default, nothing to install) or mysql
 database_manager = DatabaseManager()
 database_manager.initialize()  # creates the tables and loads the rules the first time
 
-# AI explanations + follow-up questions (Ha's subsystem). Without an AI key
-# in .env, GuidanceService still works: it falls back to the official rule.
+# AI explanations (Ha's subsystem). Without an AI key in .env, GuidanceService
+# still works: it falls back to showing the official rule as the explanation.
 guidance_service = GuidanceService(database_manager)
 
 
@@ -132,7 +130,7 @@ def classify_image(image_bytes):
         "confidence": confidence,
         "disposal_instruction": disposal_instruction,
         "explanation": guidance["explanation"],
-        # extra fields for the result page (feedback button, AI label)
+        # extra fields the result page can show (e.g. an "AI-generated" label)
         "classification_id": classification_id,
         "label": label,
         "status": status,
@@ -204,7 +202,7 @@ def analyse_image():
             analysis_controller.error_message
         )), 503
 
-    # Extra fields for the result page (feedback button, deposit hint, AI label)
+    # Extra fields for the result page (deposit hint, AI label)
     for key in ("classification_id", "label", "status", "bin_type", "is_deposit",
                 "explanation_ai_generated", "region"):
         formatted_result[key] = classification.get(key)
@@ -215,39 +213,6 @@ def analyse_image():
         "message": "Image processed successfully.",
         "result": formatted_result
     })
-
-
-@app.route("/feedback", methods=["POST"])
-def submit_feedback():
-    """'Wrong result?' button. JSON: classification_id, is_correct, correct_label (optional)."""
-    data = request.get_json(silent=True) or {}
-    try:
-        database_manager.save_feedback(
-            int(data["classification_id"]),
-            bool(data.get("is_correct", False)),
-            data.get("correct_label") or None,
-        )
-    except DataManagementError as error:          # unknown id / feedback already given
-        return jsonify({"status": "error", **error.to_dict()}), error.http_status
-    except (KeyError, TypeError, ValueError):
-        return jsonify({"status": "error",
-                        "message": "classification_id (number) is required."}), 400
-    return jsonify({"status": "success"})
-
-
-@app.route("/ask", methods=["POST"])
-def ask_question():
-    """Follow-up question to the AI. JSON: question, label (optional), region (optional)."""
-    data = request.get_json(silent=True) or {}
-    try:
-        answer = guidance_service.ask(
-            data.get("question", ""),
-            label=data.get("label") or None,
-            region=data.get("region") or REGION,
-        )
-    except DataManagementError as error:          # empty or too long question
-        return jsonify({"status": "error", **error.to_dict()}), error.http_status
-    return jsonify({"status": "success", **answer})
 
 
 @app.route("/dashboard", methods=["GET"])

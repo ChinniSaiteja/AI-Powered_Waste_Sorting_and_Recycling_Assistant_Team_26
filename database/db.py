@@ -5,9 +5,8 @@ Owner: Ha Le Thu
 DatabaseManager: the ONLY place in the project that contains SQL.
 Other subsystems call its methods and receive plain Python dicts / objects.
 
-Supports two engines, chosen in .env (no code change needed):
-    DB_ENGINE=sqlite   -> file database/waste.db, nothing to install (default)
-    DB_ENGINE=mysql    -> MySQL server, needs DB_HOST / DB_USER / DB_PASSWORD / DB_NAME
+SQLite only (kept simple on purpose - nobody on the team needs MySQL for
+the MVP). The file is database/waste.db, created automatically.
 
 Usage (e.g. in the Flask app):
     from database.db import DatabaseManager
@@ -35,43 +34,21 @@ except ImportError:
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_SQLITE_PATH = BASE_DIR / "database" / "waste.db"
 DEFAULT_SEED_FILE = BASE_DIR / "data" / "waste_guidance.json"
-SCHEMA_FILES = {
-    "sqlite": BASE_DIR / "database" / "schema_sqlite.sql",
-    "mysql": BASE_DIR / "database" / "schema_mysql.sql",
-}
+SCHEMA_FILE = BASE_DIR / "database" / "schema_sqlite.sql"
 
 
 class DatabaseManager:
     """Creates the database, loads seed data and answers queries for all subsystems."""
 
-    ALLOWED_ENGINES = ("sqlite", "mysql")
     ALLOWED_STATUS = ("completed", "uncertain", "failed")
 
     # 1. Constructor
-    def __init__(self, engine: str | None = None, db_path: str | None = None):
-        self.__engine = None
-        self.engine = engine or os.getenv("DB_ENGINE", "sqlite")
+    def __init__(self, db_path: str | None = None, **_ignored):
+        # **_ignored: accepts (and ignores) the old engine="sqlite" keyword,
+        # so any code still written that way keeps working.
         self.db_path = db_path or os.getenv("DB_PATH", str(DEFAULT_SQLITE_PATH))
-        self.__mysql_config = {
-            "host": os.getenv("DB_HOST", "localhost"),
-            "port": int(os.getenv("DB_PORT", "3306")),
-            "user": os.getenv("DB_USER", "root"),
-            "password": os.getenv("DB_PASSWORD", ""),
-        }
-        self.__db_name = os.getenv("DB_NAME", "waste_db")
 
     # 3. Getters & setters
-    @property
-    def engine(self) -> str:
-        return self.__engine
-
-    @engine.setter
-    def engine(self, value: str) -> None:
-        value = str(value).strip().lower()
-        if value not in self.ALLOWED_ENGINES:
-            raise InvalidDataError("DB_ENGINE", value, f"must be one of {self.ALLOWED_ENGINES}")
-        self.__engine = value
-
     @property
     def db_path(self) -> str:
         return self.__db_path
@@ -85,42 +62,26 @@ class DatabaseManager:
         # folder, so the Flask app and the demo scripts use the same file from any folder
         self.__db_path = str(path if path.is_absolute() else BASE_DIR / path)
 
-    @property
-    def db_name(self) -> str:
-        return self.__db_name
-
     # ------------------------------------------------------------------
     # Internal helpers (private)
     # ------------------------------------------------------------------
-    def __sql(self, query: str) -> str:
-        """Queries are written with '?' placeholders; MySQL needs '%s'."""
-        return query.replace("?", "%s") if self.__engine == "mysql" else query
-
-    def __insert_ignore(self) -> str:
-        return "INSERT IGNORE" if self.__engine == "mysql" else "INSERT OR IGNORE"
-
     @contextmanager
     def __connect(self):
         """Open a connection, give back a cursor that returns dict rows, commit at the end.
 
         Error handling (Home Assignment 4):
           - connection problems  -> DatabaseConnectionError
-          - broken constraints   -> InvalidDataError (e.g. duplicate feedback, unknown id)
+          - broken constraints   -> InvalidDataError (e.g. unknown id)
           - any error            -> rollback, so the database never keeps half-saved data
         """
         try:
-            if self.__engine == "sqlite":
-                Path(self.__db_path).parent.mkdir(parents=True, exist_ok=True)
-                conn = sqlite3.connect(self.__db_path)
-                conn.row_factory = sqlite3.Row
-                conn.execute("PRAGMA foreign_keys = ON")
-                cursor = conn.cursor()
-            else:
-                import mysql.connector  # only needed when DB_ENGINE=mysql
-                conn = mysql.connector.connect(database=self.__db_name, **self.__mysql_config)
-                cursor = conn.cursor(dictionary=True)
+            Path(self.__db_path).parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(self.__db_path)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            cursor = conn.cursor()
         except Exception as error:
-            raise DatabaseConnectionError(self.__engine, error) from error
+            raise DatabaseConnectionError("sqlite", error) from error
         try:
             yield cursor
             conn.commit()
@@ -136,20 +97,6 @@ class DatabaseManager:
             cursor.close()
             conn.close()
 
-    def __create_mysql_database(self) -> None:
-        import mysql.connector
-        try:
-            conn = mysql.connector.connect(**self.__mysql_config)
-        except Exception as error:
-            raise DatabaseConnectionError("mysql", error) from error
-        cur = conn.cursor()
-        cur.execute(
-            f"CREATE DATABASE IF NOT EXISTS `{self.__db_name}` "
-            "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-        )
-        cur.close()
-        conn.close()
-
     @staticmethod
     def __read_statements(schema_file: Path) -> list[str]:
         """Split a .sql file into single statements (comments removed)."""
@@ -161,14 +108,12 @@ class DatabaseManager:
     # 2. Initialisation methods
     # ------------------------------------------------------------------
     def initialize(self, seed_file: str | Path = DEFAULT_SEED_FILE) -> int:
-        """Create all 8 tables (if missing) and load the rules the first time.
+        """Create all tables (if missing) and load the rules the first time.
 
         Returns the number of rules loaded (0 if the data was already there).
         """
-        if self.__engine == "mysql":
-            self.__create_mysql_database()
         with self.__connect() as cur:
-            for statement in self.__read_statements(SCHEMA_FILES[self.__engine]):
+            for statement in self.__read_statements(SCHEMA_FILE):
                 cur.execute(statement)
             cur.execute("SELECT COUNT(*) AS n FROM waste_items")
             already_seeded = cur.fetchone()["n"] > 0
@@ -199,24 +144,22 @@ class DatabaseManager:
         with self.__connect() as cur:
             for rule in rules:
                 category = rule.item.category
-                cur.execute(self.__sql(
-                    f"{self.__insert_ignore()} INTO waste_categories (name, description) VALUES (?, ?)"),
+                cur.execute(
+                    "INSERT OR IGNORE INTO waste_categories (name, description) VALUES (?, ?)",
                     (category.name, category.description))
-                cur.execute(self.__sql("SELECT id FROM waste_categories WHERE name = ?"),
-                            (category.name,))
+                cur.execute("SELECT id FROM waste_categories WHERE name = ?", (category.name,))
                 category.id = cur.fetchone()["id"]
 
-                cur.execute(self.__sql(
-                    f"{self.__insert_ignore()} INTO waste_items (category_id, label, is_deposit) "
-                    "VALUES (?, ?, ?)"),
+                cur.execute(
+                    "INSERT OR IGNORE INTO waste_items (category_id, label, is_deposit) "
+                    "VALUES (?, ?, ?)",
                     (category.id, rule.item.label, rule.item.is_deposit))
-                cur.execute(self.__sql("SELECT id FROM waste_items WHERE label = ?"),
-                            (rule.item.label,))
+                cur.execute("SELECT id FROM waste_items WHERE label = ?", (rule.item.label,))
                 rule.item.id = cur.fetchone()["id"]
 
-                cur.execute(self.__sql(
-                    f"{self.__insert_ignore()} INTO disposal_rules "
-                    "(item_id, region, bin_type, instruction) VALUES (?, ?, ?, ?)"),
+                cur.execute(
+                    "INSERT OR IGNORE INTO disposal_rules "
+                    "(item_id, region, bin_type, instruction) VALUES (?, ?, ?, ?)",
                     (rule.item.id, rule.region, rule.bin_type, rule.instruction))
         return len(rules)
 
@@ -226,7 +169,7 @@ class DatabaseManager:
     def get_rule(self, label: str, region: str = DisposalRule.DEFAULT_REGION) -> dict | None:
         """Backend: disposal guidance for a classifier label, or None if unknown."""
         with self.__connect() as cur:
-            cur.execute(self.__sql("""
+            cur.execute("""
                 SELECT w.id AS item_id, w.label, w.is_deposit, c.id AS category_id,
                        c.name AS category, c.description, r.id AS rule_id,
                        r.region, r.bin_type, r.instruction
@@ -234,7 +177,7 @@ class DatabaseManager:
                 JOIN waste_categories c ON c.id = w.category_id
                 JOIN disposal_rules r   ON r.item_id = w.id
                 WHERE w.label = ? AND r.region = ?
-            """), (label.strip().lower(), region.strip().title()))
+            """, (label.strip().lower(), region.strip().title()))
             row = cur.fetchone()
         if row is None:
             return None
@@ -287,34 +230,21 @@ class DatabaseManager:
             if not 0.0 <= confidence <= 1.0:
                 raise InvalidDataError("confidence", confidence, "must be between 0 and 1")
         with self.__connect() as cur:
-            cur.execute(self.__sql("SELECT id FROM waste_items WHERE label = ?"), (label,))
+            cur.execute("SELECT id FROM waste_items WHERE label = ?", (label,))
             row = cur.fetchone()
             item_id = row["id"] if row else None
             if created_at:
-                cur.execute(self.__sql("""
+                cur.execute("""
                     INSERT INTO classifications
                         (item_id, predicted_label, confidence, status, region, created_at)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """), (item_id, label, confidence, status, region.strip().title(), created_at))
+                """, (item_id, label, confidence, status, region.strip().title(), created_at))
             else:
-                cur.execute(self.__sql("""
+                cur.execute("""
                     INSERT INTO classifications (item_id, predicted_label, confidence, status, region)
                     VALUES (?, ?, ?, ?, ?)
-                """), (item_id, label, confidence, status, region.strip().title()))
+                """, (item_id, label, confidence, status, region.strip().title()))
             return cur.lastrowid
-
-    def save_feedback(self, classification_id: int, is_correct: bool,
-                      correct_label: str | None = None) -> None:
-        """Backend: store the answer of the 'Wrong result?' button."""
-        with self.__connect() as cur:
-            cur.execute(self.__sql("SELECT id FROM classifications WHERE id = ?"), (classification_id,))
-            if cur.fetchone() is None:
-                raise ItemNotFoundError("classification", classification_id)
-            cur.execute(self.__sql("""
-                INSERT INTO user_feedback (classification_id, is_correct, correct_label)
-                VALUES (?, ?, ?)
-            """), (classification_id, bool(is_correct),
-                   correct_label.strip().lower() if correct_label else None))
 
     def get_classification_records(self, region: str | None = DisposalRule.DEFAULT_REGION,
                                    limit: int = 50) -> list[dict]:
@@ -332,12 +262,12 @@ class DatabaseManager:
             raise InvalidDataError("limit", limit, "must be between 1 and 1000")
         where, params = self.__region_filter(region)
         with self.__connect() as cur:
-            cur.execute(self.__sql(f"""
+            cur.execute(f"""
                 SELECT cl.id, cl.predicted_label, cl.confidence, cl.status, cl.region,
                        cl.created_at, c.name AS category, w.is_deposit,
                        r.bin_type, r.instruction,
                        (SELECT g.answer FROM ai_guidance g
-                        WHERE g.item_id = cl.item_id AND g.question IS NULL
+                        WHERE g.item_id = cl.item_id
                         ORDER BY g.id DESC LIMIT 1) AS explanation
                 FROM classifications cl
                 LEFT JOIN waste_items w      ON w.id = cl.item_id
@@ -346,7 +276,7 @@ class DatabaseManager:
                 {where}
                 ORDER BY cl.created_at DESC, cl.id DESC
                 LIMIT ?
-            """), params + [limit])
+            """, params + [limit])
             rows = cur.fetchall()
         return [
             {
@@ -380,7 +310,7 @@ class DatabaseManager:
 
         region=None -> all regions. Keys: region, total_items, by_category,
         category_percentages, recycling_rate, per_day, top_items, region_counts,
-        uncertain_count, wrong_feedback_count
+        uncertain_count
         """
         where, params = self.__region_filter(region)
         if date_from:
@@ -391,55 +321,47 @@ class DatabaseManager:
             params.append(date_to)
 
         with self.__connect() as cur:
-            cur.execute(self.__sql(f"""
+            cur.execute(f"""
                 SELECT COUNT(*) AS total,
                        SUM(CASE WHEN cl.status = 'uncertain' THEN 1 ELSE 0 END) AS uncertain
                 FROM classifications cl {where}
-            """), params)
+            """, params)
             totals = cur.fetchone()
 
-            cur.execute(self.__sql(f"""
+            cur.execute(f"""
                 SELECT c.name AS category, COUNT(*) AS n
                 FROM classifications cl
                 JOIN waste_items w      ON w.id = cl.item_id
                 JOIN waste_categories c ON c.id = w.category_id
                 {where}
                 GROUP BY c.name
-            """), params)
+            """, params)
             by_category = {r["category"]: int(r["n"]) for r in cur.fetchall()}
 
-            cur.execute(self.__sql(f"""
+            cur.execute(f"""
                 SELECT DATE(cl.created_at) AS day, COUNT(*) AS n
                 FROM classifications cl {where}
                 GROUP BY DATE(cl.created_at)
                 ORDER BY day
-            """), params)
+            """, params)
             per_day = [{"date": str(r["day"]), "count": int(r["n"])} for r in cur.fetchall()]
 
-            cur.execute(self.__sql(f"""
-                SELECT COUNT(*) AS n
-                FROM user_feedback f
-                JOIN classifications cl ON cl.id = f.classification_id
-                {where} AND f.is_correct = ?
-            """), params + [False])
-            wrong = cur.fetchone()["n"]
-
-            cur.execute(self.__sql(f"""
+            cur.execute(f"""
                 SELECT cl.predicted_label AS label, COUNT(*) AS n
                 FROM classifications cl {where}
                 GROUP BY cl.predicted_label
                 ORDER BY n DESC, cl.predicted_label
                 LIMIT ?
-            """), params + [int(top_n)])
+            """, params + [int(top_n)])
             top_items = [{"label": r["label"], "waste_name": r["label"].capitalize(),
                           "count": int(r["n"])} for r in cur.fetchall()]
 
-            cur.execute(self.__sql(f"""
+            cur.execute(f"""
                 SELECT cl.region, COUNT(*) AS n
                 FROM classifications cl {where}
                 GROUP BY cl.region
                 ORDER BY n DESC
-            """), params)
+            """, params)
             region_counts = {r["region"]: int(r["n"]) for r in cur.fetchall()}
 
         total = int(totals["total"] or 0)
@@ -457,50 +379,40 @@ class DatabaseManager:
             "top_items": top_items,
             "region_counts": region_counts,
             "uncertain_count": int(totals["uncertain"] or 0),
-            "wrong_feedback_count": int(wrong or 0),
         }
 
     # ------------------------------------------------------------------
-    # AI guidance support (used by GuidanceService, capstone)
+    # AI guidance support (used by GuidanceService)
     # ------------------------------------------------------------------
-    def get_cached_guidance(self, label: str, question: str | None = None) -> str | None:
-        """Return a stored AI answer for this item, or None.
-
-        question=None -> the explanation of the item; otherwise the answer to that question.
-        """
-        question_filter = "g.question IS NULL" if question is None else "g.question = ?"
-        params = [label.strip().lower()] + ([] if question is None else [question.strip()])
+    def get_cached_guidance(self, label: str) -> str | None:
+        """Return a stored AI explanation for this item, or None."""
         with self.__connect() as cur:
-            cur.execute(self.__sql(f"""
+            cur.execute("""
                 SELECT g.answer FROM ai_guidance g
                 JOIN waste_items w ON w.id = g.item_id
-                WHERE w.label = ? AND {question_filter}
+                WHERE w.label = ?
                 ORDER BY g.id DESC
-            """), params)
+            """, (label.strip().lower(),))
             row = cur.fetchone()
         return row["answer"] if row else None
 
-    def save_guidance(self, label: str, answer: str, question: str | None = None) -> bool:
-        """Cache an AI explanation (question=None) or an answer to a user question.
-
-        Returns False if the label is not in waste_items.
-        """
+    def save_guidance(self, label: str, answer: str) -> bool:
+        """Cache an AI explanation. Returns False if the label is not in waste_items."""
         if not str(answer or "").strip():
             raise InvalidDataError("answer", answer, "must not be empty")
         with self.__connect() as cur:
-            cur.execute(self.__sql("SELECT id FROM waste_items WHERE label = ?"),
-                        (label.strip().lower(),))
+            cur.execute("SELECT id FROM waste_items WHERE label = ?", (label.strip().lower(),))
             row = cur.fetchone()
             if row is None:
                 return False
-            cur.execute(self.__sql("INSERT INTO ai_guidance (item_id, question, answer) VALUES (?, ?, ?)"),
-                        (row["id"], question.strip() if question else None, answer.strip()))
+            cur.execute("INSERT INTO ai_guidance (item_id, answer) VALUES (?, ?)",
+                        (row["id"], answer.strip()))
         return True
 
     def get_ai_usage(self, usage_date: str) -> int:
         """Number of AI calls on one day ('YYYY-MM-DD')."""
         with self.__connect() as cur:
-            cur.execute(self.__sql("SELECT request_count FROM ai_usage_log WHERE usage_date = ?"),
+            cur.execute("SELECT request_count FROM ai_usage_log WHERE usage_date = ?",
                         (usage_date,))
             row = cur.fetchone()
         return int(row["request_count"]) if row else 0
@@ -508,10 +420,10 @@ class DatabaseManager:
     def increment_ai_usage(self, usage_date: str) -> int:
         """Add 1 to today's AI counter and return the new value."""
         with self.__connect() as cur:
-            cur.execute(self.__sql(
-                f"{self.__insert_ignore()} INTO ai_usage_log (usage_date, request_count) VALUES (?, 0)"),
+            cur.execute(
+                "INSERT OR IGNORE INTO ai_usage_log (usage_date, request_count) VALUES (?, 0)",
                 (usage_date,))
-            cur.execute(self.__sql(
-                "UPDATE ai_usage_log SET request_count = request_count + 1 WHERE usage_date = ?"),
+            cur.execute(
+                "UPDATE ai_usage_log SET request_count = request_count + 1 WHERE usage_date = ?",
                 (usage_date,))
         return self.get_ai_usage(usage_date)

@@ -330,13 +330,16 @@ predictions; without them `app.py` falls back to a placeholder result).
 Stores every classification result, the Dortmund disposal rules and the AI answers,
 and gives the statistics for the municipality dashboard. Full details: [docs/DATABASE.md](docs/DATABASE.md).
 
+Kept deliberately simple: SQLite only, no admin/feedback/chat features that
+nobody in the team uses yet. Easier for everyone to read and explain.
+
 | File | Purpose |
 |------|---------|
-| `database/db.py` | `DatabaseManager`, the only file with SQL (SQLite or MySQL, 8 tables) |
+| `database/db.py` | `DatabaseManager`, the only file with SQL (SQLite, 5 tables) |
 | `database/models.py` | `WasteCategory`, `WasteItem`, `DisposalRule` (encapsulation, validation) |
 | `database/exceptions.py` | `DataManagementError`, `InvalidDataError`, `ItemNotFoundError`, `DatabaseConnectionError` |
-| `database/guidance.py` | `GuidanceService`: AI explanation and follow-up questions, with cache, daily limit and fallback |
-| `database/schema_sqlite.sql`, `schema_mysql.sql` | Database schema |
+| `database/guidance.py` | `GuidanceService`: AI explanation for a result, with cache, daily limit and fallback |
+| `database/schema_sqlite.sql` | Database schema |
 | `data/waste_guidance.json` | 72 Dortmund rules; labels match the classifier labels exactly |
 | `demo_data_management.py`, `demo_ai_guidance.py`, `demo_dashboard_data.py` | Demos |
 | `tests/` | Unit tests (AI is mocked) |
@@ -355,9 +358,7 @@ ai = GuidanceService(db)
 # Backend (Sai) - after the classifier (Azi) returns a result
 rule = db.get_rule("glass jar")                   # bin_type, instruction, category, is_deposit
 text = ai.explain("glass jar", rule=rule)         # {"explanation", "source", "ai_generated"}
-cid = db.save_classification("glass jar", 0.92, status="completed")
-db.save_feedback(cid, is_correct=False, correct_label="glass bottle")
-ai.ask("Do I need to wash it?", label="glass jar")  # {"answer", "source", "ai_generated"}
+db.save_classification("glass jar", 0.92, status="completed")
 
 # Dashboard (Kanika)
 db.get_classification_records(region="Dortmund", limit=50)   # newest first, region=None -> all
@@ -365,11 +366,10 @@ db.get_stats(region="Dortmund")
 ```
 
 `get_stats()` returns `total_items`, `by_category`, `category_percentages`,
-`recycling_rate` (0-1), `per_day`, `top_items`, `region_counts`,
-`uncertain_count` and `wrong_feedback_count`.
+`recycling_rate` (0-1), `per_day`, `top_items`, `region_counts` and `uncertain_count`.
 
-Flask routes in `web_interface_dashboard/app.py`: `POST /analyse`, `POST /feedback`,
-`POST /ask`, `GET /dashboard` (Kanika's HTML dashboard page, built on `get_stats()`).
+Flask routes in `web_interface_dashboard/app.py`: `POST /analyse`,
+`GET /dashboard` (Kanika's HTML dashboard page, built on `get_stats()`).
 
 ### Setup
 
@@ -393,10 +393,9 @@ Useful URLs: `/` (upload a photo), `/dashboard` (municipality dashboard).
 
 ### Database file
 
-`database/waste.db` is created automatically on the first start (8 tables + 72 Dortmund rules
+`database/waste.db` is created automatically on the first start (5 tables + 72 Dortmund rules
 from `data/waste_guidance.json`). It is not committed to Git.
 To load changed rules from the JSON file, delete `database/waste.db` and start again.
-To use MySQL instead, set `DB_ENGINE=mysql` and the `DB_*` values in `.env`.
 
 ### AI key (free option)
 
@@ -418,7 +417,7 @@ to the AI, never images.
 ### Tests and demos
 
 ```bash
-python -m pytest -q                   # 67 tests for the whole project (33 are Ha's: database + AI, mocked)
+python -m pytest -q                   # tests for the whole project (16 are Ha's: database + AI, mocked)
 python -m pytest -q --cov=database    # coverage for Ha's part
 python demo_data_management.py        # classes + database
 python demo_ai_guidance.py            # AI explanation, cache and fallback
