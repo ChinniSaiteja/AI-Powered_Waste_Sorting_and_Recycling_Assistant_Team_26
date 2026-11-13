@@ -164,11 +164,14 @@ for this item yet). `category` and `bin_type` are `null` for labels that are not
 ### Flask routes (`web_interface_dashboard/app.py`)
 | Route | Purpose |
 |---|---|
-| `POST /analyse` | upload image → classifier → rule + AI explanation → saved |
-| `POST /ask` | JSON `{"question", "label"?, "region"?}` → AI answer |
-| `POST /feedback` | JSON `{"classification_id", "is_correct", "correct_label"?}` |
-| `GET /api/dashboard/stats?region=Dortmund` | `get_stats()`; `region=all` for all regions |
-| `GET /api/dashboard/records?region=Dortmund&limit=50` | `get_classification_records()` |
+| `POST /analyse` | upload image → classifier → rule + AI explanation (`GuidanceService.explain`) → saved |
+| `POST /ask` | JSON `{"question", "label"?, "region"?}` → AI answer (`GuidanceService.ask`) |
+| `POST /feedback` | JSON `{"classification_id", "is_correct", "correct_label"?}` (`save_feedback`) |
+| `GET /dashboard` | Kanika's HTML dashboard, built from `get_stats()` via `MunicipalityDashboard` |
+
+There is no separate JSON API for the dashboard numbers; `get_stats()` and
+`get_classification_records()` can still be called directly in Python (see below)
+if a JSON endpoint is needed later.
 
 Errors are returned as `{"status": "error", "error": "INVALID_DATA" / "NOT_FOUND", "message": ...}`
 with HTTP 400 / 404 (from `database/exceptions.py`).

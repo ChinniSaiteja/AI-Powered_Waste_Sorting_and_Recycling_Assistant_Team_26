@@ -130,8 +130,7 @@ db.get_stats(region="Dortmund")
 `uncertain_count` and `wrong_feedback_count`.
 
 Flask routes in `web_interface_dashboard/app.py`: `POST /analyse`, `POST /feedback`,
-`POST /ask`, `GET /api/dashboard/stats?region=Dortmund|all`,
-`GET /api/dashboard/records?region=...&limit=50`.
+`POST /ask`, `GET /dashboard` (Kanika's HTML dashboard page, built on `get_stats()`).
 
 ### Setup
 
@@ -151,8 +150,7 @@ flask --app app run --port 5050       # open http://127.0.0.1:5050
 ```
 
 On macOS port 5000 is often used by AirPlay Receiver, so we use port 5050.
-Useful URLs: `/api/dashboard/stats`, `/api/dashboard/stats?region=all`,
-`/api/dashboard/records?limit=10`.
+Useful URLs: `/` (upload a photo), `/dashboard` (municipality dashboard).
 
 ### Database file
 
@@ -181,8 +179,8 @@ to the AI, never images.
 ### Tests and demos
 
 ```bash
-python -m pytest -q                   # 20 unit tests, AI is mocked (no key needed)
-python -m pytest -q --cov=database    # with coverage
+python -m pytest -q                   # 67 tests for the whole project (33 are Ha's: database + AI, mocked)
+python -m pytest -q --cov=database    # coverage for Ha's part
 python demo_data_management.py        # classes + database
 python demo_ai_guidance.py            # AI explanation, cache and fallback
 ```
