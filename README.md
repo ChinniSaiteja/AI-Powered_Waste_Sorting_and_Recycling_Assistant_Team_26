@@ -16,6 +16,7 @@ and gives the statistics for the municipality dashboard. Full details: [docs/DAT
 | `data/waste_guidance.json` | 72 Dortmund rules; labels match the classifier labels exactly |
 | `demo_data_management.py`, `demo_ai_guidance.py`, `demo_dashboard_data.py` | Demos |
 | `tests/` | Unit tests (AI is mocked) |
+| `docs/class_diagram_data.png`, `.puml` | UML class diagram of this subsystem (matches the code) |
 
 ### API for the other subsystems
 

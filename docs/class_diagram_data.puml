@@ -1,0 +1,149 @@
+@startuml
+' Subsystem 4 - Data Management & AI Guidance (Ha Le Thu)
+' Matches the code in database/ (db.py, guidance.py, models.py, exceptions.py).
+' (C) = Python class, (E) = database table that has no Python class.
+' "-" = private (__name in Python), "+" = public
+title Data Management & AI Guidance - Class Diagram
+
+skinparam classAttributeIconSize 0
+
+class DatabaseManager {
+  -__engine : str
+  -__db_path : str
+  -__db_name : str
+  -__mysql_config : dict
+  +initialize(seed_file) : int
+  +load_guidance_file(path) : list[DisposalRule] {static}
+  +seed(rules) : int
+  +get_rule(label : str, region : str) : dict
+  +require_rule(label : str, region : str) : dict
+  +get_all_items() : list[WasteItem]
+  +save_classification(label, confidence, status, region) : int
+  +save_feedback(classification_id, is_correct, correct_label) : None
+  +get_classification_records(region, limit) : list[dict]
+  +get_stats(region, date_from, date_to, top_n) : dict
+  +get_cached_guidance(label, question) : str
+  +save_guidance(label, answer, question) : bool
+  +get_ai_usage(usage_date : str) : int
+  +increment_ai_usage(usage_date : str) : int
+  -__connect() : cursor
+  -__sql(query : str) : str
+  -__region_filter(region : str) : tuple
+}
+
+class GuidanceService {
+  -__db : DatabaseManager
+  -__client : OpenAI
+  -__model : str
+  -__daily_limit : int
+  +ai_enabled : bool
+  +get_guidance(label : str, region : str) : dict
+  +explain(label : str, region : str, rule : dict) : dict
+  +ask(question : str, label : str, region : str) : dict
+  -__create_client() : OpenAI
+  -__build_prompt(label, region, rule) : str
+  -__ask_model(prompt, system_prompt) : str
+  -__fallback(label, rule) : dict
+}
+
+class WasteCategory {
+  -__id : int
+  -__name : str
+  -__description : str
+  +from_dict(data) : WasteCategory
+  +to_dict() : dict
+}
+
+class WasteItem {
+  -__id : int
+  -__label : str
+  -__category : WasteCategory
+  -__is_deposit : bool
+  +from_dict(data, category) : WasteItem
+  +to_dict() : dict
+}
+
+class DisposalRule {
+  -__id : int
+  -__item : WasteItem
+  -__region : str
+  -__bin_type : str
+  -__instruction : str
+  +from_dict(data, item, region) : DisposalRule
+  +to_dict() : dict
+}
+
+entity "AIUsageLog" as AIUsageLog <<table ai_usage_log>> {
+  -id : int
+  -usage_date : date
+  -request_count : int
+}
+
+entity "AdminUser" as AdminUser <<table admin_users>> {
+  -id : int
+  -username : str
+  -password_hash : str
+  -region : str
+  -created_at : datetime
+}
+
+entity "Classification" as Classification <<table classifications>> {
+  -id : int
+  -item_id : int
+  -predicted_label : str
+  -confidence : float
+  -status : str
+  -region : str
+  -created_at : datetime
+}
+
+entity "UserFeedback" as UserFeedback <<table user_feedback>> {
+  -id : int
+  -classification_id : int
+  -is_correct : bool
+  -correct_label : str
+  -created_at : datetime
+}
+
+entity "AIGuidance" as AIGuidance <<table ai_guidance>> {
+  -id : int
+  -item_id : int
+  -question : str
+  -answer : str
+  -created_at : datetime
+}
+
+class DataManagementError <<exception>> {
+  +code : str
+  +http_status : int
+  +to_dict() : dict
+}
+class InvalidDataError <<400>> {
+  +field : str
+}
+class ItemNotFoundError <<404>>
+class DatabaseConnectionError <<503>>
+
+DatabaseManager --> AIUsageLog : stores
+DatabaseManager --> AdminUser : manages
+DatabaseManager --> DisposalRule : manages
+DatabaseManager --> WasteCategory : manages
+DatabaseManager --> WasteItem : manages
+DatabaseManager --> Classification : stores
+DatabaseManager --> UserFeedback : stores
+DatabaseManager --> AIGuidance : stores
+GuidanceService "1" --> "1" DatabaseManager : uses
+GuidanceService --> AIGuidance : creates / retrieves
+
+WasteCategory "1" -- "0..*" WasteItem : contains
+WasteItem "1" -- "0..*" DisposalRule : has rules
+AdminUser "1" -- "0..*" DisposalRule : updates (updated_by)
+WasteItem "0..1" -- "0..*" Classification : classified as
+Classification "1" -- "0..1" UserFeedback : receives feedback
+WasteItem "1" -- "0..*" AIGuidance : has guidance
+
+DatabaseManager ..> DataManagementError : raises
+DataManagementError <|-- InvalidDataError
+DataManagementError <|-- ItemNotFoundError
+DataManagementError <|-- DatabaseConnectionError
+@enduml
