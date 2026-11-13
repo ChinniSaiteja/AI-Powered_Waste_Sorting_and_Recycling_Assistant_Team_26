@@ -1,0 +1,30 @@
+@startuml
+!include style.iuml
+title Class diagram - Municipality Dashboard
+
+class MunicipalityDashboard {
+  - database_manager : DatabaseManager
+  - region : str
+  - stats : dict
+  --
+  + __init__(database_manager, region : str = "Dortmund")
+  + load_data() : None
+  + get_dashboard_statistics() : dict
+  + get_region_name() : str
+  + get_total_analysed_items() : int
+  + get_recyclable_percentage() : float
+  + get_category_distribution() : list[dict]
+}
+
+class DatabaseManager <<external>> {
+  + get_stats(region, date_from, date_to) : dict
+  + get_classification_records(region, limit) : list[dict]
+}
+
+MunicipalityDashboard "1" --> "1" DatabaseManager : reads statistics
+
+note right of DatabaseManager
+  Subsystem 4 - Data Management
+  (all SQL and calculations happen here)
+end note
+@enduml
