@@ -3,6 +3,9 @@
 ' Matches the code in database/ (db.py, guidance.py, models.py, exceptions.py).
 ' (C) = Python class, (E) = database table that has no Python class.
 ' "-" = private (__name in Python), "+" = public
+' Simplified on purpose: only the methods other subsystems actually call.
+' The full method list (seed, require_rule, get_all_items, AI cache,
+' private helpers, ...) is in database/db.py and database/guidance.py.
 title Data Management & AI Guidance - Class Diagram
 
 skinparam classAttributeIconSize 0
@@ -10,40 +13,20 @@ skinparam classAttributeIconSize 0
 class DatabaseManager {
   -__engine : str
   -__db_path : str
-  -__db_name : str
-  -__mysql_config : dict
-  +initialize(seed_file) : int
-  +load_guidance_file(path) : list[DisposalRule] {static}
-  +seed(rules) : int
+  +initialize() : int
   +get_rule(label : str, region : str) : dict
-  +require_rule(label : str, region : str) : dict
-  +get_all_items() : list[WasteItem]
   +save_classification(label, confidence, status, region) : int
   +save_feedback(classification_id, is_correct, correct_label) : None
+  +get_stats(region, date_from, date_to) : dict
   +get_classification_records(region, limit) : list[dict]
-  +get_stats(region, date_from, date_to, top_n) : dict
-  +get_cached_guidance(label, question) : str
-  +save_guidance(label, answer, question) : bool
-  +get_ai_usage(usage_date : str) : int
-  +increment_ai_usage(usage_date : str) : int
-  -__connect() : cursor
-  -__sql(query : str) : str
-  -__region_filter(region : str) : tuple
 }
 
 class GuidanceService {
   -__db : DatabaseManager
   -__client : OpenAI
-  -__model : str
-  -__daily_limit : int
-  +ai_enabled : bool
   +get_guidance(label : str, region : str) : dict
   +explain(label : str, region : str, rule : dict) : dict
   +ask(question : str, label : str, region : str) : dict
-  -__create_client() : OpenAI
-  -__build_prompt(label, region, rule) : str
-  -__ask_model(prompt, system_prompt) : str
-  -__fallback(label, rule) : dict
 }
 
 class WasteCategory {
