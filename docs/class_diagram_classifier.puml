@@ -1,0 +1,188 @@
+@startuml
+' Subsystem 3 - Image Classifier & Object Detector (Azam Rahmani)
+' Matches the code in classifier/ (waste_classifier.py, waste_detector.py, preprocessor.py,
+' category_mapper.py, model.py, detection_model.py, config.py, result.py,
+' detection_result.py, status.py, exceptions.py).
+' "-" = private (__name in Python), "#" = protected (_name), "+" = public
+title Image Classifier & Object Detector - Class Diagram
+
+skinparam classAttributeIconSize 0
+
+class WasteClassifier {
+  +config : ClassifierConfig
+  +mapper : CategoryMapper
+  +preprocessor : ImagePreprocessor
+  +model : ClassifierModel
+  +error_handler : ClassifierErrorHandler
+  +confidence_threshold : float
+  +warm_up() : None
+  +predict(image) : PredictionResult
+  +classify(image) : dict
+}
+
+class WasteDetector {
+  +config : ClassifierConfig
+  +mapper : CategoryMapper
+  +preprocessor : ImagePreprocessor
+  +model : DetectionModel
+  +error_handler : ClassifierErrorHandler
+  +detection_threshold : float
+  +warm_up() : None
+  +detect(image) : DetectionResult
+  +detect_dict(image) : dict
+  +iou(box_a, box_b) : float {static}
+  #_to_object(detection) : DetectedObject
+  #_remove_overlaps(detections) : list
+}
+
+class ImagePreprocessor {
+  -__config : ClassifierConfig
+  +config : ClassifierConfig
+  +validate(source) : Image
+  +preprocess(image) : Image
+  +prepare_for_detection(image) : Image
+}
+
+class CategoryMapper {
+  +LABEL_TO_CATEGORY : dict {static}
+  +CATEGORIES : tuple {static}
+  -__label_to_category : dict
+  +label_to_category : dict
+  +labels : list
+  +categories : list
+  +map_category(label : str) : str
+  +check_confidence(confidence, threshold) : bool {static}
+}
+
+abstract class ClassifierModel {
+  +config : ClassifierConfig
+  +labels : list
+  +load() : None
+  +{abstract} predict(image) : (str, float)
+}
+
+class ZeroShotClipModel {
+  #_pipeline
+  #_prompts : dict
+  +load() : None
+  +predict(image) : (str, float)
+}
+
+abstract class DetectionModel {
+  +config : ClassifierConfig
+  +labels : list
+  +load() : None
+  +{abstract} detect(image) : list
+}
+
+class ZeroShotOwlVitModel {
+  #_processor
+  #_model
+  #_prompts : list
+  +load() : None
+  +detect(image) : list
+}
+
+class ClassifierConfig <<dataclass>> {
+  +model_name : str
+  +detector_model_name : str
+  +confidence_threshold : float
+  +detection_threshold : float
+  +min_detection_score : float
+  +overlap_iou : float
+  +max_objects : int
+  +image_size : int
+  +max_file_size_mb : float
+  +allowed_formats : tuple
+  +prompt_template : str
+  +device : str
+}
+
+class PredictionResult <<dataclass>> {
+  +status : ClassifierStatus
+  +label : str
+  +category : str
+  +confidence : float
+  +message : str
+  +inference_ms : float
+  +is_success : bool
+  +to_dict() : dict
+}
+
+class DetectionResult <<dataclass>> {
+  +status : ClassifierStatus
+  +objects : list[DetectedObject]
+  +message : str
+  +inference_ms : float
+  +is_success : bool
+  +to_dict() : dict
+}
+
+class DetectedObject <<dataclass>> {
+  +label : str
+  +category : str
+  +confidence : float
+  +bounding_box : (x, y, width, height)
+  +status : ClassifierStatus
+  +to_dict() : dict
+}
+
+enum ClassifierStatus {
+  COMPLETED
+  UNCERTAIN
+  INVALID_IMAGE
+  ERROR
+}
+
+class ClassifierErrorHandler {
+  +STATUS_TO_HTTP : dict {static}
+  -__counts : Counter
+  +unavailable_message : str
+  +error_counts : dict
+  +wrap(exc) : ClassifierError
+  +to_status(exc) : (ClassifierStatus, str)
+  +to_response(exc) : (dict, int)
+  +http_status_for(status) : int {static}
+  +register(app) : None
+}
+
+class ClassifierError {
+  +code : str
+  +http_status : int
+  +status : ClassifierStatus
+  -__message : str
+  -__details : dict
+  +to_dict() : dict
+}
+
+class InvalidImageError
+class ModelUnavailableError
+class InvalidConfigError
+
+ClassifierModel <|-- ZeroShotClipModel
+DetectionModel <|-- ZeroShotOwlVitModel
+ClassifierError <|-- InvalidImageError
+ClassifierError <|-- ModelUnavailableError
+ClassifierError <|-- InvalidConfigError
+
+WasteClassifier *-- ImagePreprocessor
+WasteClassifier o-- ClassifierModel
+WasteClassifier o-- CategoryMapper
+WasteClassifier *-- ClassifierErrorHandler
+WasteClassifier --> ClassifierConfig
+WasteClassifier ..> PredictionResult : creates
+
+WasteDetector *-- ImagePreprocessor
+WasteDetector o-- DetectionModel
+WasteDetector o-- CategoryMapper
+WasteDetector *-- ClassifierErrorHandler
+WasteDetector --> ClassifierConfig
+WasteDetector ..> DetectionResult : creates
+
+DetectionResult *-- DetectedObject
+PredictionResult --> ClassifierStatus
+DetectedObject --> ClassifierStatus
+ImagePreprocessor ..> InvalidImageError : raises
+ClassifierConfig ..> InvalidConfigError : raises
+ClassifierErrorHandler ..> ClassifierError : wraps
+@enduml

@@ -266,6 +266,13 @@ The classifier never raises: `ClassifierErrorHandler` (`classifier/exceptions.py
 exception into one of these statuses, logs unexpected errors and hides internal details.
 Images stay in memory and are never saved to disk.
 
+**UML class diagram:** `docs/class_diagram_classifier.png` (source: `docs/class_diagram_classifier.puml`,
+matches the code in `classifier/`).
+
+![Classifier class diagram](docs/class_diagram_classifier.png)
+
+Simplified overview:
+
 ```mermaid
 classDiagram
     class WasteClassifier {
