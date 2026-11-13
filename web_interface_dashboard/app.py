@@ -1,3 +1,4 @@
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -34,15 +35,30 @@ REGION = "Dortmund"
 UNCERTAIN_THRESHOLD = 0.6  # below this confidence a result is stored as "uncertain"
 
 # Load the real model ONCE here, when the app starts (not on every request).
-# Replace this line when the classifier is ready, e.g.:
-#   from ml_classifier.classifier import WasteClassifier
-#   classifier = WasteClassifier("path/to/model")
+# Subsystem 3 (classifier/): pretrained CLIP, zero-shot. It needs torch and
+# transformers; without them (or if they cannot load) the app keeps working with
+# the placeholder below instead of crashing.
 classifier = None
+if importlib.util.find_spec("torch") and importlib.util.find_spec("transformers"):
+    try:
+        from classifier import WasteClassifier  # noqa: E402
+
+        classifier = WasteClassifier()
+        classifier.warm_up()  # downloads the model (~600 MB) the first time only
+    except Exception as error:  # e.g. a blocked torch DLL or no internet on first run
+        print(f"Classifier could not be loaded ({error}): using placeholder results.")
+        classifier = None
+else:
+    print("Classifier libraries not installed (torch, transformers): using placeholder results.")
 
 # While there is no classifier, use the first label the database knows,
 # so the database lookup (Step B) can already be tested with real rules.
 _known_items = database_manager.get_all_items()
 PLACEHOLDER_LABEL = _known_items[0].label if _known_items else "glass jar"
+
+
+class UnusableImageError(Exception):
+    """The classifier could not use the uploaded file (empty, broken, unsupported)."""
 
 
 class UnknownWasteItemError(Exception):
@@ -65,15 +81,21 @@ def classify_image(image_bytes):
     if classifier is None:
         prediction = {"label": PLACEHOLDER_LABEL, "confidence": 0.94}  # TEMPORARY
     else:
-        # Adjust this line to how your colleague's classifier is called
-        prediction = classifier.predict(image_bytes)
+        # {"status", "label", "category", "confidence", "message", "inference_ms"}
+        prediction = classifier.classify(image_bytes)
+        if prediction["status"] == "invalid_image":
+            raise UnusableImageError(prediction["message"])
+        if prediction["status"] == "error":
+            raise RuntimeError(prediction["message"])  # -> 503 below
 
     # Labels in the database are lowercase with spaces, e.g. "glass jar"
     label = str(prediction["label"]).strip().lower().replace("_", " ")
     confidence = float(prediction["confidence"])
     if confidence > 1:  # classifier returned a percentage, e.g. 94 -> 0.94
         confidence = confidence / 100
-    status = "completed" if confidence >= UNCERTAIN_THRESHOLD else "uncertain"
+    # The classifier decides completed/uncertain with its own threshold
+    status = prediction.get("status") or (
+        "completed" if confidence >= UNCERTAIN_THRESHOLD else "uncertain")
 
     # --- Step B: disposal rule from the database ----------------------------
     rule = database_manager.get_rule(label, region=REGION)
@@ -154,6 +176,8 @@ def analyse_image():
     try:
         classification = classify_image(image_bytes)
         formatted_result = result_view.display_result(classification)
+    except UnusableImageError as error:
+        return jsonify(result_view.display_error(str(error))), 400
     except UnknownWasteItemError:
         return jsonify(result_view.display_error(
             "This item could not be matched to a disposal rule. "

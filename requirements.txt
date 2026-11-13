@@ -4,3 +4,10 @@ openai>=1.0
 mysql-connector-python>=8.0   # only needed when DB_ENGINE=mysql
 pytest>=8.0
 pytest-cov>=5.0
+
+# Subsystem 3 - image classifier (Azam). Optional for the other subsystems:
+# without torch/transformers the web app uses a placeholder result.
+pillow>=10.0
+matplotlib>=3.9
+torch>=2.0
+transformers>=4.40
