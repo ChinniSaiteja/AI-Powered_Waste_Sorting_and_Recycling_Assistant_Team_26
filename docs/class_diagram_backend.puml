@@ -1,98 +1,299 @@
 @startuml
 
-title Backend & Application Integration - Class Diagram
+title Subsystem 2 - Backend & Application Integration - Sai Teja Chinni
 
 skinparam classAttributeIconSize 0
 skinparam shadowing false
 skinparam packageStyle rectangle
+skinparam linetype ortho
 
-class AnalysisService {
-    - _classifier
-    - _database_manager
-    - _guidance_service
-    - _result_handler
-    - _response_composer
+' =========================================================
+' BACKEND SUBSYSTEM
+' =========================================================
 
-    + __init__(
-        classifier,
-        database_manager,
-        guidance_service,
-        result_handler,
-        response_composer
-    )
+package "Backend & Application Integration" {
 
-    + classifier
-    + database_manager
-    + guidance_service
+    class AnalysisService <<main>> {
 
-    + initialize() : None
+        - _classifier
+        - _database_manager
+        - _guidance_service
+        - _result_handler : ClassificationResultHandler
+        - _response_composer : ResponseComposer
 
-    + analyze(
-        image_bytes : bytes,
-        region : str
-    ) : dict
+        + __init__(
+            classifier,
+            database_manager,
+            guidance_service,
+            result_handler = None,
+            response_composer = None
+        )
+
+        + classifier
+        + database_manager
+        + guidance_service
+
+        + initialize() : None
+
+        + analyze(
+            image_bytes : bytes,
+            region : str = "Dortmund"
+        ) : dict
+    }
+
+
+    class ClassificationResultHandler <<main>> {
+
+        {static} DEFAULT_REGION : str = "Dortmund"
+
+        - _default_region : str
+
+        + __init__(
+            default_region : str = DEFAULT_REGION
+        )
+
+        + default_region : str
+
+        + initialize() : None
+
+        + handle(
+            prediction : dict,
+            region : str | None = None
+        ) : dict
+    }
+
+
+    class ResponseComposer <<main>> {
+
+        - _initialized : bool
+
+        + __init__()
+
+        + initialized : bool
+
+        + initialize() : None
+
+        + compose(
+            classification : dict,
+            guidance : dict,
+            classification_id : int
+        ) : dict
+    }
+
+
+    ' =====================================================
+    ' BACKEND EXCEPTIONS
+    ' =====================================================
+
+    class BackendError <<exception>> {
+    }
+
+    class ClassifierIntegrationError <<exception>> {
+    }
+
+    class InvalidImageError <<exception>> {
+    }
+
+    class InvalidClassificationResultError <<exception>> {
+    }
+
+    class GuidanceIntegrationError <<exception>> {
+    }
+
+    class ResponseCompositionError <<exception>> {
+    }
 }
 
-class ClassificationResultHandler {
-    - _default_region : str
-    {static} DEFAULT_REGION : str
 
-    + __init__(
-        default_region : str
-    )
+' =========================================================
+' EXTERNAL SUBSYSTEMS
+' =========================================================
 
-    + default_region : str
+package "Subsystem 3 - Image Classifier & Object Detector" {
 
-    + initialize() : None
+    class WasteClassifier <<external>> {
 
-    + handle(
-        prediction : dict,
-        region : str
-    ) : dict
+        + warm_up() : None
+
+        + classify(
+            image_bytes : bytes
+        ) : dict
+    }
 }
 
-class ResponseComposer {
-    - _initialized : bool
 
-    + __init__()
+package "Subsystem 4 - Data Management & AI Guidance" {
 
-    + initialized : bool
+    class GuidanceService <<external>> {
 
-    + initialize() : None
+        + get_guidance(
+            label : str,
+            region : str
+        ) : dict
 
-    + compose(
-        classification : dict,
-        guidance : dict,
-        classification_id : int
-    ) : dict
+        + explain(
+            label : str,
+            region : str,
+            rule : dict | None = None
+        ) : dict
+
+        + ask(
+            question : str,
+            label : str | None = None,
+            region : str = "Dortmund"
+        ) : dict
+    }
+
+
+    class DatabaseManager <<external>> {
+
+        + save_classification(
+            label : str,
+            confidence : float | None = None,
+            status : str = "completed",
+            region : str = "Dortmund"
+        ) : int
+    }
 }
 
-class MLClassifier <<external>> {
-    + classify(
-        image_bytes : bytes
-    ) : dict
+
+package "Web Interface" {
+
+    class FlaskApplication <<external>> {
+
+        + POST /analyse
+        + POST /feedback
+        + POST /ask
+        + GET /dashboard
+    }
 }
 
-class GuidanceService <<external>> {
-    + get_guidance(
-        label : str,
-        region : str
-    ) : dict
-}
 
-class DatabaseManager <<external>> {
-    + save_classification(
-        label : str,
-        confidence : float,
-        status : str,
-        region : str
-    ) : int
-}
+' =========================================================
+' BACKEND INTERNAL RELATIONSHIPS
+' =========================================================
 
-AnalysisService --> MLClassifier : classify image
-AnalysisService --> ClassificationResultHandler : validate result
-AnalysisService --> GuidanceService : request guidance
-AnalysisService --> DatabaseManager : save result
-AnalysisService --> ResponseComposer : compose response
+AnalysisService *-- ClassificationResultHandler
+AnalysisService *-- ResponseComposer
+
+
+' =========================================================
+' BACKEND TO OTHER SUBSYSTEMS
+' =========================================================
+
+AnalysisService ..> WasteClassifier : calls classify()
+AnalysisService ..> GuidanceService : requests guidance
+AnalysisService ..> DatabaseManager : saves classification
+
+FlaskApplication ..> AnalysisService : sends image / receives response
+
+
+' =========================================================
+' EXCEPTION INHERITANCE
+' =========================================================
+
+BackendError <|-- ClassifierIntegrationError
+BackendError <|-- InvalidImageError
+BackendError <|-- InvalidClassificationResultError
+BackendError <|-- GuidanceIntegrationError
+BackendError <|-- ResponseCompositionError
+
+
+' =========================================================
+' EXCEPTION USAGE
+' =========================================================
+
+AnalysisService ..> ClassifierIntegrationError : raises
+AnalysisService ..> GuidanceIntegrationError : raises
+
+ClassificationResultHandler ..> InvalidImageError : raises
+ClassificationResultHandler ..> InvalidClassificationResultError : raises
+
+ResponseComposer ..> ResponseCompositionError : raises
+
+
+' =========================================================
+' NOTES
+' =========================================================
+
+note right of AnalysisService
+
+Main orchestration component.
+
+Workflow:
+
+1. Receive image
+2. Call WasteClassifier
+3. Validate classifier result
+4. Request disposal guidance
+5. Save classification
+6. Compose final response
+7. Return response
+
+end note
+
+
+note right of ClassificationResultHandler
+
+Validates and normalizes
+the classifier response.
+
+Checks:
+
+- status
+- label
+- confidence
+- category
+- region
+
+Default region:
+Dortmund
+
+end note
+
+
+note right of ResponseComposer
+
+Combines:
+
+- classification
+- guidance
+- classification ID
+
+and creates the final
+frontend response.
+
+end note
+
+
+note bottom of WasteClassifier
+
+Subsystem 3
+
+Returns the classifier result
+to the backend.
+
+end note
+
+
+note bottom of GuidanceService
+
+Subsystem 4
+
+Provides waste-disposal
+guidance and AI assistance.
+
+end note
+
+
+note bottom of DatabaseManager
+
+Subsystem 4
+
+Persists classification
+results and returns the
+classification ID.
+
+end note
 
 @enduml
