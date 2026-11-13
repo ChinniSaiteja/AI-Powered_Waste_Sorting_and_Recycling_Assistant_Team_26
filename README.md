@@ -2,6 +2,202 @@
 Python Compact Course Capstone Project
 
 
+## Subsystem: Web Interface & Municipality Dashboard
+
+**Location:** `web_interface_dashboard/`
+## Overview
+
+**Develops the web interface that lets citizens upload or photograph a waste item and see its classification, disposal instruction and AI explanation, and the municipality dashboard that summarises all stored classifications.**
+
+---
+
+### Responsibilities
+
+- **Image upload:** users choose an existing image from their device (*Upload from Gallery*) or take a new photo with their phone camera (*Take a Photo*).
+- **Upload validation:** checks that an image is present, not empty, at most 10 MB and of type PNG, JPG or JPEG before it is sent to the classifier.
+- **Result display:** shows the waste name, category, confidence, disposal instruction and educational explanation, or a clear error message.
+- **Municipality dashboard:** shows the number of analysed items, the share classified as recyclable and the distribution across the three waste categories, calculated from the stored classification records.
+
+---
+
+### Folder Structure
+
+```
+web_interface_dashboard/
+├── app.py                              # Flask app: routes and connection of all subsystems
+├── web_interface/
+│   ├── waste_upload_view.py            # WasteUploadView
+│   ├── analysis_controller.py          # AnalysisController
+│   ├── classification_result_view.py   # ClassificationResultView, WasteCategory
+│   └── exceptions.py                   # error classes of this subsystem
+├── dashboard/
+│   └── municipality_dashboard.py       # MunicipalityDashboard
+├── templates/
+│   ├── index.html                      # upload and result page
+│   └── dashboard.html                  # municipality dashboard page
+└── static/
+    ├── css/                            # style.css, dashboard.css
+    └── js/                             # script.js (upload, preview, result display)
+
+tests/
+└── test_web_interface.py               # automated tests for this subsystem
+```
+
+---
+
+### How It Works
+
+```
+Upload page ──► AnalysisController (validate) ──► Classifier (Subsystem 3)
+                                                      │
+                                                      ▼
+Result page ◄── ClassificationResultView ◄── Disposal rule + AI explanation (Subsystem 4)
+                                                      │
+                                                      ▼
+Dashboard   ◄── MunicipalityDashboard     ◄── Stored classification results (database)
+```
+
+1. The user selects or takes a photo on the upload page.
+2. `WasteUploadView` stores the image and its details (name, size, type).
+3. `AnalysisController` validates the upload (image present, allowed file type).
+4. The classifier recognises the item; the database provides the disposal rule and `GuidanceService` the AI explanation.
+5. `ClassificationResultView` validates the result and returns it to the page.
+6. Every real classification is saved, so `MunicipalityDashboard` can show the statistics.
+
+### Routes
+
+| Route | Method | Description |
+|---|---|---|
+| `/` | GET | Upload page (`index.html`) |
+| `/analyse` | POST | Receives the image (form field `image`) and returns the result as JSON |
+| `/dashboard` | GET | Municipality dashboard (`dashboard.html`) |
+
+---
+
+### Screenshots
+
+**Upload page:** choose an image from the gallery or take a photo.
+
+![Upload page](docs/screenshots/upload_page.png)
+
+**Classification result:** waste category, disposal instruction and AI explanation.
+
+![Classification result](docs/screenshots/result.png)
+
+**Municipality dashboard:** statistics from all stored classifications.
+
+![Municipality dashboard](docs/screenshots/dashboardd.png)
+
+---
+
+### Class Diagrams
+
+#### Web Interface
+
+![Web Interface class diagram](docs/class_diagram_web_interface.png)
+
+#### Municipality Dashboard
+
+![Municipality Dashboard class diagram](docs/class_diagram_municipality_dashboard.png)
+
+---
+
+### Classes
+
+| Class | File | Responsibility | Main methods |
+|---|---|---|---|
+| `WasteUploadView` | `waste_upload_view.py` | Stores the selected image and its name, size, type and upload status. | `select_image(image)`, `submit_image()` |
+| `AnalysisController` | `analysis_controller.py` | Validates the upload before classification and records the request status and errors. | `validate_upload(image, filename)`, `request_analysis(image, filename)`, `handle_error(message)` |
+| `ClassificationResultView` | `classification_result_view.py` | Validates and stores one classification result and returns it for display, or returns an error message. | `display_result(result)`, `display_error(message)` |
+| `WasteCategory` (Enum) | `classification_result_view.py` | The three waste categories used by the whole project. | `RECYCLABLE`, `COMPOSTABLE`, `LANDFILL` |
+| `MunicipalityDashboard` | `municipality_dashboard.py` | Loads the statistics for a region once and prepares them for the dashboard page. | `load_data()`, `get_total_analysed_items()`, `get_recyclable_percentage()`, `get_category_distribution()` |
+
+#### Object-Oriented Design
+
+Every class follows the same structure:
+
+1. **Constructor (`__init__`):** sets up the initial state, e.g. `WasteUploadView(max_size_bytes=10 MB)` or `MunicipalityDashboard(database_manager, region="Dortmund")`.
+2. **Initialisation methods:** `initialize()` resets the object to its starting state and, where applicable, configures it (e.g. the accepted file types in `AnalysisController`). `to_dict()` returns the object's data for the web page. In `MunicipalityDashboard`, `load_data()` fetches the statistics from the database once.
+3. **Encapsulation (getters & setters):** all attributes are private and accessed through `@property` getters. The setters validate their input, e.g. the confidence must be between 0 and 1, the category must be one of the `WasteCategory` values, and the upload status must be one of the known statuses.
+
+---
+
+### Error Handling
+
+The subsystem has its own error classes in `web_interface/exceptions.py`:
+
+```
+WebInterfaceError            base class for all errors of this subsystem
+├── InvalidUploadError       no image, empty file, file too large, invalid status
+├── InvalidResultError       invalid result value, e.g. confidence outside 0-1
+└── ImageRejectedError       the classifier could not use the image
+```
+
+The input errors also inherit from `ValueError`. Invalid uploads never crash the application: `WasteUploadView.select_image()` catches `InvalidUploadError`, sets the status to *Invalid Image* and stores the message.
+
+The Flask app turns every problem into a clear JSON message:
+
+| Situation | HTTP status | Message shown to the user |
+|---|---|---|
+| No image selected | 400 | Please select an image. |
+| Empty or unusable image | 400 | Image upload failed. / message from the classifier |
+| Wrong file type | 400 | Please upload a valid image file (PNG, JPG, JPEG). |
+| File larger than 10 MB | 413 | File is too large. Maximum size is 10 MB. |
+| Item has no disposal rule | 422 | This item could not be matched to a disposal rule. Please try another photo. |
+| Classifier not available or failed | 503 | Classification service unavailable. |
+
+---
+
+### Testing
+
+The subsystem is tested with **pytest** (`tests/test_web_interface.py`, 40 test cases):
+
+| Test group | What is tested |
+|---|---|
+| `TestWasteUploadView` | Starting state, storing name/size/type, rewinding the file, submitting with and without an image, rejecting empty and too-large images, setter validation, `initialize()` |
+| `TestAnalysisController` | Starting state, accepted file types (PNG, JPG, JPEG in any case), rejecting other types and missing images, `request_analysis()`, `handle_error()`, configuring allowed types, setter validation |
+| `TestClassificationResultView` | Starting state, returned page data, conversion to `WasteCategory`, rejecting invalid categories / confidences / empty texts, replacing an old error, `display_error()` |
+| `TestWebInterfaceExceptions` | Error class hierarchy, errors raised by the setters, stored error messages |
+
+Run the tests from the project root:
+
+```bash
+python -m pytest tests/test_web_interface.py -v
+```
+
+---
+
+### Setup and Running
+
+**Requirements** (all listed in `requirements.txt`):
+
+| Package | Needed for |
+|---|---|
+| `Flask` | Web application |
+| `python-dotenv` | Reading the settings in `.env` |
+| `torch`, `transformers`, `pillow` | Real image classification (Subsystem 3) |
+| `openai` | AI explanations (Subsystem 4; works with Groq, Gemini or OpenAI) |
+| `pytest` | Automated tests |
+
+```bash
+pip install -r requirements.txt
+```
+
+**Settings:** copy `.env.example` to `.env` in the project root and add an AI key (see the Data Management & AI Guidance section). Without a key the app still works and shows the official disposal rule instead of an AI explanation.
+
+**Start the app** from the `web_interface_dashboard` folder:
+
+```bash
+python app.py
+```
+
+Then open:
+- **http://127.0.0.1:5000** - upload page
+- **http://127.0.0.1:5000/dashboard** - municipality dashboard
+
+> On the first start, the classifier downloads its model (about 600 MB) once. Without `torch` and `transformers` the app still runs and uses placeholder results, which are not saved to the database.
+
+
 
 ## Subsystem 2: Backend & Application Integration
 ## Overview
