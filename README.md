@@ -53,7 +53,8 @@ Upload page ──► AnalysisController (validate) ──► Classifier (Subsys
                                                       ▼
 Result page ◄── ClassificationResultView ◄── Disposal rule + AI explanation (Subsystem 4)
                                                       │
-                                                      ▼
+                                                      ▼web
+                                                
 Dashboard   ◄── MunicipalityDashboard     ◄── Stored classification results (database)
 ```
 
@@ -618,3 +619,5 @@ python -m pytest -q --cov=database    # coverage for Ha's part
 python demo_data_management.py        # classes + database
 python demo_ai_guidance.py            # AI explanation, cache and fallback
 ```
+### Capstone Project Vedio demonstration
+https://www.youtube.com/watch?v=JKf68Jn4LGo
